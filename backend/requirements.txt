@@ -1,0 +1,6 @@
+sqlalchemy
+pydantic
+pydantic_settings
+datetime
+fastapi
+passlib

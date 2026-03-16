@@ -5,6 +5,26 @@ from app.models.user import User
 from app.schemas.report import ReviewCreate
 from app.utils.pdf_generator import generate_pdf_from_html
 from app.utils.html_report_generator import generate_html_report
+import uuid
+from app.utils.file_handler import save_photo_to_disk
+
+async def save_report(db: AsyncSession, measurements,path_to_photo,metadata, llm_response, trace_data):
+    id_report = str(uuid.uuid4())
+    report = Report(
+        id_report=id_report,
+        user_id=None,
+        path_to_photo=path_to_photo,
+        measurements=measurements,
+        metadata=metadata,
+        llm_response=llm_response,
+        trace_data=trace_data
+    )
+
+    db.add(report)
+    await db.commit()
+    await db.refresh(report)
+    return id_report
+
 async def get_reports_by_login(db: AsyncSession, login: str):
     result = await db.execute(select(User).where(User.login == login))
     user = result.scalar_one_or_none()

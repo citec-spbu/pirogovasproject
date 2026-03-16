@@ -1,5 +1,5 @@
 from pydantic import BaseModel,ConfigDict
-from datatime import date
+from datetime import date
 
 class UserCreate(BaseModel):
     login: str
@@ -8,6 +8,10 @@ class UserCreate(BaseModel):
     surname: str
     patronymic: str
     date_of_birth: date
+
+class UserLogin(BaseModel):
+    login: str
+    password: str
 
 class UserOut(BaseModel):
     id: int

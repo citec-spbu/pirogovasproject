@@ -8,14 +8,14 @@ from app.utils.html_report_generator import generate_html_report
 import uuid
 from app.utils.file_handler import save_photo_to_disk
 
-async def save_report(db: AsyncSession, measurements,path_to_photo,metadata, llm_response, trace_data):
+async def save_report(db: AsyncSession, measurements,path_to_photo,meta, llm_response, trace_data):
     id_report = str(uuid.uuid4())
     report = Report(
         id_report=id_report,
         user_id=None,
         path_to_photo=path_to_photo,
         measurements=measurements,
-        metadata=metadata,
+        meta=meta,
         llm_response=llm_response,
         trace_data=trace_data
     )

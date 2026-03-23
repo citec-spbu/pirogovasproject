@@ -7,7 +7,7 @@ from app.utils import file_handler
 from datetime import date
 from typing import Optional
 
-router = APIRouter(prefix="llm", tags=["llm"])
+router = APIRouter(prefix="/llm", tags=["llm"])
 
 @router.post("/create_report", response_model=ReportIdResponse)
 async def create_report(
@@ -23,7 +23,7 @@ async def create_report(
     db: AsyncSession = Depends(get_db)
 ):
     try:
-        metadata = {
+        meta = {
                     "name": patient_name,
                     "sex": patient_sex,
                     "birth_date": birth_date.isoformat(),
@@ -49,7 +49,7 @@ async def create_report(
             db=db,
             measurements=measurements_dict,
             photo_path=photo_path,
-            metadata=metadata,
+            meta=meta,
             llm_response=llm_response,
             trace_data=trace_data
         )

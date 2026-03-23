@@ -4,7 +4,7 @@ from app.schemas.report import ReportsListResponse, ReviewCreate
 from app.services import report_service
 from app.core.database import get_db
 
-router = APIRouter(prefix="reports", tags=["reports"])
+router = APIRouter(prefix="/reports", tags=["reports"])
 
 @router.get("get_id_reports", response_model=ReportsListResponse)
 async def get_id_reports(login: str = Query(...), db: AsyncSession = Depends(get_db)):

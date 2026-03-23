@@ -10,7 +10,7 @@ class ReportOut(BaseModel):
     user_id: int
     path_to_photo: str
     measurements: dict
-    metadata: dict
+    meta: dict
     llm_response: dict
     trace_data: Optional[dict] = None
     review_score: Optional[int] = None

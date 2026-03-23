@@ -10,7 +10,7 @@ class Report(Base):
     user_id = Column(Integer,ForeignKey("users.id"), nullable=False)
     path_to_photo = Column(String, nullable=False)
     measurements = Column(JSON, nullable=False)
-    metadata = Column(JSON, nullable=False)
+    meta = Column(JSON, nullable=False)
     llm_response = Column(JSON, nullable=False)
     trace_data = Column(JSON, nullable=True)
     review_score = Column(Integer, nullable=True)

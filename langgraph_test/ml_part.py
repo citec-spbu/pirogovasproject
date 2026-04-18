@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
-from typing import TypedDict, List, Dict, Any
+from typing import TypedDict, List, Dict, Any, Optional
+import re
 
 import numpy as np
 from dotenv import load_dotenv
@@ -148,40 +149,75 @@ def build_kb(folder_path: str) -> Dict[str, Any]:
         "embeddings": embeddings,
     }
 
-
-def retrieve_top_k(query: str, kb: Dict[str, Any], top_k: int = TOP_K, min_score: float = MIN_RELEVANCE_SCORE) -> List[Dict[str, Any]]:
+def retrieve_top_k(query: str, kb: Dict[str, Any], json_data: Optional[Dict] = None, top_k: int = 5, min_score: float = 0.5) -> Dict[str, Any]:
+    enriched_query = str(query)
+    keywords_from_json = set()
+    if json_data:
+        translated_list = []
+        for key in json_data.keys():
+            clean_key = key.strip()
+            russian_term = TRANSLATION_MAP.get(clean_key)
+            if russian_term:
+                translated_list.append(russian_term)
+                keywords_from_json.update(_normalize_text(russian_term))
+        
+        zones_str = " ".join(translated_list)
+        enriched_query += f" {zones_str} Максимальные диаметры, Минимальный диаметр, Периметр сосуда, Площадь поперечного сечения, норма диаметр классификация показатели мм превышать"
+        
+        raw_keywords = _extract_keywords_from_json(json_data)
+        for kw in raw_keywords:
+            keywords_from_json.update(_normalize_text(kw))
     chunks = kb.get("chunks", [])
     embeddings = kb.get("embeddings")
-
     if not chunks or embeddings is None or len(chunks) == 0:
-        return []
-
-    query_embedding = embed_texts([query])
+        return {"chunks": [], "sources": []}
+    query_embedding = embed_texts([enriched_query])
     if query_embedding.size == 0:
-        return []
-
+        return {"chunks": [], "sources": []}
     scores = np.dot(embeddings, query_embedding[0])
-    ranked_indices = np.argsort(scores)[::-1]
-
-    results: List[Dict[str, Any]] = []
-    for idx in ranked_indices[: max(top_k * 3, top_k)]:
-        score = float(scores[idx])
-        if score < min_score:
-            continue
-
+    candidate_indices = np.argsort(scores)[::-1][:(top_k * 3)]
+    preliminary_results = []
+    for idx in candidate_indices:
         chunk = chunks[int(idx)]
-        results.append({
+        preliminary_results.append({
             "source": chunk["source"],
             "chunk_id": chunk["chunk_id"],
             "text": chunk["text"],
-            "score": score,
-        })
+            "score": float(scores[idx])})
+    for item in preliminary_results:
+        text_lower = item["text"].lower()
+        text_normalized = _normalize_text(item["text"])
 
-        if len(results) >= top_k:
-            break
+        # А) Бонус за совпадение терминов из JSON
+        matches = keywords_from_json.intersection(text_normalized)
+        item["score"] += len(matches) * 0.05
 
-    return results
+        # Б) Бонус за числовые нормативы
+        numeric_patterns = [
+            r'\d{1,2}(\.\d)?\s?мм', 
+            r'[><=]\s?\d{1,2}', 
+            r'от\s\d{1,2}\sдо\s\d{1,2}'
+        ]
+        if any(re.search(p, text_lower) for p in numeric_patterns):
+            item["score"] += 0.15
 
+        # В) Штраф за описание изображений
+        stop_patterns = ["рис.", "рисунок", "вид сбоку", "снимок", "визуализация", "иллюстрация", "график"]
+        if any(stop in text_lower for stop in stop_patterns):
+            item["score"] -= 0.15
+
+        # Г) Штраф за ссылки на литературу
+        reference_matches = re.findall(r'\[[\d,\s\-]+\]', text_lower)
+        item["score"] -= len(reference_matches) * 0.005
+
+    final_chunks = [c for c in preliminary_results if c["score"] >= min_score]
+    final_chunks.sort(key=lambda x: x["score"], reverse=True)
+    selected_chunks = final_chunks[:top_k]
+
+    return {
+        "chunks": selected_chunks,
+        "sources": list(set(c["source"] for c in selected_chunks))
+    }
 
 # Узлы графа
 
@@ -312,32 +348,30 @@ patient_data_text = format_patient_data(patient_data)
 
 def build_prompt(state: MedGraphState) -> MedGraphState:
     prompt = f"""
-Ты — ассистент врача, работающий строго по клиническим рекомендациям.
+Вы — врач-кардиохирург, эксперт в области кардиологии и сосудистой хирургии с 50-летним опытом. Ваша специализация: анализ КТ-ангиографии аорты, оценка аневризм, диссекций и стенозирующих поражений.
+Сформируйте заключение врача-кардиохирурга, основываясь на данных измерений КТ аорты
+Справочные данные и клинические рекомендации:
+{state.get("fused_context", "")}
 
-Правила:
-1. Используй ТОЛЬКО данные из:
-   - жалоб,
-   - анамнеза,
-   - приведённых ниже фрагментов гайдлайнов.
-2. Запрещено использовать внешние знания.
-3. Если информации в гайдлайнах недостаточно — явно напиши об этом.
-4. Не ставь окончательный диагноз.
-5. Каждое утверждение о гипотезе или рекомендации обязательно сопровождай ссылкой вида [GUIDELINE i].
-6. Если в контексте нет ни одного фрагмента [GUIDELINE i], ответ должен быть ровно таким:
-   Релевантные клинические рекомендации не найдены. Недостаточно данных для анализа.
+Жалобы и анамнез пациента: ???????
 
-Формат ответа:
-1. Вероятные гипотезы (максимум - 5 гипотез)
-2. Обоснование
-3. Что нужно уточнить
-4. Краткие рекомендации
-5. Ограничения
-
-Данные пациента:
+Результаты КТ (структурированные данные):
 {patient_data_text}
 
-Контекст:
-{state.get("fused_context", "")}
+<rules>
+1. Анализируйте данные ТОЛЬКО на основе предоставленных материалов. Не используйте внешние медицинские базы и не домысливайте значения.
+2. Если в данных или контексте отсутствует информация для вывода по конкретному параметру, явно укажите: "Недостаточно данных для оценки [параметр]". Не делайте предположений.
+3. Сопоставляйте измерения из JSON с референсными значениями из контекста. Указывайте единицы измерения и нормативные диапазоны.
+4. Используйте строгую медицинскую терминологию. Избегайте разговорных формулировок.
+5. Заключение носит информационно-аналитический характер и требует очной верификации лечащим врачом.
+</rules>
+<output_format>
+Верните ответ строго в следующей структуре. Не добавляйте вводные/заключительные фразы вне схемы:
+[Контекст] Краткая выжимка релевантных норм/рекомендаций из подгруженного контекста.
+[Анализ] Сопоставление измерений пациента с нормами. Выявленные отклонения (с конкретными цифрами).
+[Интерпретация] Клиническая значимость изменений. Оценка рисков (стабильность, прогрессирование, угроза разрыва и т.д.).
+[Заключение] Предварительный диагноз/статус. Рекомендации по тактике (наблюдение, КТ-контроль через Х мес., консультация, хирургическое/эндоваскулярное лечение).
+</output_format>
 """.strip()
 
     return {
@@ -397,8 +431,9 @@ if __name__ == "__main__":
     graph = build_graph()
 
     initial_state: MedGraphState = {
-        "query": "Кашель, температура, слабость, одышка",
-        "patient_history": "Пациент 54 лет, длительный стаж курения",
+        "query": "боль в груди, между лопатками, в верхней части спины, шее, затруднённое дыхание, одышка, хрипы, кашель,ощущение комка в горле. Врожденных патологий нет"
+        #"Кашель, температура, слабость, одышка",
+        "patient_history": "Мужчина, 54 лет, длительный стаж курения",
         "guideline_paths": ["docs"],
         "warnings": [],
         "errors": [],

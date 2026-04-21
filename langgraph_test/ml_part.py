@@ -225,110 +225,188 @@ def _normalize_text(text: str) -> set:
     words = re.findall(r'\b[а-яА-ЯёЁa-zA-Z]{3,}\b', text.lower())
     return {morph.parse(w)[0].normal_form for w in words}
 
-def retrieve_top_k(query: str, kb: Dict[str, Any], json_data: Optional[Dict] = None, use_hybrid_search: bool = True, use_cross_encoding: bool = True,
-    top_k: int = TOP_K, min_score: float = MIN_RELEVANCE_SCORE) -> Dict[str, Any]:   
-    enriched_query = str(query)
-    keywords_from_json = set()
-    if json_data:
-        translated_list = []
-        for key in json_data.keys():
-            clean_key = key.strip()
-            russian_term = TRANSLATION_MAP.get(clean_key)
-            if russian_term:
-                translated_list.append(russian_term)
-                keywords_from_json.update(_normalize_text(russian_term))
-        
-        zones_str = " ".join(translated_list)
-        enriched_query += f" {zones_str} Максимальные диаметры, Минимальный диаметр, Периметр сосуда, Площадь поперечного сечения, норма диаметр классификация показатели мм превышать"
-        
-        raw_keywords = _extract_keywords_from_json(json_data)
-        for kw in raw_keywords:
-            keywords_from_json.update(_normalize_text(kw))
-
+def hybrid_retrieve(query: str, kb: Dict[str, Any], top_k: int) -> List[Dict[str, Any]]:
     chunks = kb.get("chunks", [])
     embeddings = kb.get("embeddings")
     if not chunks or embeddings is None or len(chunks) == 0:
-        return {"chunks": [], "sources": []}
-
-    #Cosine Similarity (Dense Retrieval)
-    query_embedding = embed_texts([enriched_query], is_query=True)
-    cos_scores = np.dot(embeddings, query_embedding[0])
+        return []
+            
+    #Cosine Similarity
+    q_emb = embed_texts([query], is_query=True)
+    cos_scores = np.dot(embeddings, q_emb[0])
     cos_ranks = np.argsort(cos_scores)[::-1]
-
-    #BM25 Score (Lexical Retrieval)
-    bm25_scores, bm25_ranks = None, None
-    if use_hybrid_search and kb.get("bm25_index"):
-        query_tokens = _tokenize_bm25(enriched_query)
-        bm25_scores = kb["bm25_index"].get_scores(query_tokens)
+        
+    #BM25
+    bm25_ranks = None
+    if kb.get("bm25_index"):
+        q_tokens = _tokenize_bm25(query)
+        bm25_scores = kb["bm25_index"].get_scores(q_tokens)
         bm25_ranks = np.argsort(bm25_scores)[::-1]
 
-    #RRF Fusion (Reciprocal Rank Fusion)
+    #RRF Fusion
     rrf_scores = np.zeros(len(chunks))
     K_RRF = 60.0
-    def apply_rrf(ranks: np.ndarray, target: np.ndarray):
+    def apply_rrf(ranks, target):
         for rank, idx in enumerate(ranks, start=1):
             target[idx] += 1.0 / (K_RRF + rank)
-
     apply_rrf(cos_ranks, rrf_scores)
-    if use_hybrid_search and bm25_ranks is not None:
+    if bm25_ranks is not None:
         apply_rrf(bm25_ranks, rrf_scores)
 
-    #Кандидаты для кросс-энкодинга (топ * 3)
     candidate_indices = np.argsort(rrf_scores)[::-1][:(top_k * 3)]
-    preliminary_results = []
+    results = []
     for idx in candidate_indices:
         idx = int(idx)
-        preliminary_results.append({
-            "source": chunks[idx]["source"], "chunk_id": chunks[idx]["chunk_id"],
-            "text": chunks[idx]["text"], "index": idx, "rrf_score": float(rrf_scores[idx])
-        })
+        results.append({"source": chunks[idx]["source"], "chunk_id": chunks[idx]["chunk_id"], "text": chunks[idx]["text"],
+            "index": idx, "score": float(rrf_scores[idx])})
 
     #Cross-Encoder Reranking
-    if use_cross_encoding and preliminary_results:
-        pairs = [[enriched_query, item["text"]] for item in preliminary_results]
+    if results:
+        pairs = [[query, r["text"]] for r in results]
         ce_scores = CROSS_ENCODER.predict(pairs, show_progress_bar=False)
-        for i, item in enumerate(preliminary_results):
-            item["final_score"] = 0.3 * item["rrf_score"] + 0.7 * float(ce_scores[i])
-            item["score"] = item["final_score"]
-    else:
-        for item in preliminary_results:
-            item["final_score"] = item["rrf_score"]
-            item["score"] = item["final_score"]
+        for i, r in enumerate(results):
+            r["score"] = 0.3 * r["score"] + 0.7 * float(ce_scores[i])
 
-        for item in preliminary_results:
-            text_lower = item["text"].lower()
-            text_normalized = _normalize_text(item["text"])
+    results.sort(key=lambda x: x["score"], reverse=True)
+    for r in results:
+        r.pop("index", None)
+    return results[:top_k]
 
-         # А) Бонус за совпадение терминов из JSON
-            matches = keywords_from_json.intersection(text_normalized)
-            item["score"] += len(matches) * 0.05
+def _apply_json_heuristics(candidates: List[Dict[str, Any]], keywords_from_json: set) -> List[Dict[str, Any]]:
+    for c in candidates:
+        chunk_lower = c["text"].lower()
+        chunk_normalized = _normalize_text(c["text"])
 
-         # Б) Бонус за числовые нормативы
-            numeric_patterns = [
-             r'\d{1,2}(\.\d)?\s?мм', 
-             r'[><=]\s?\d{1,2}', 
-             r'от\s\d{1,2}\sдо\s\d{1,2}'
-         ]
-            if any(re.search(p, text_lower) for p in numeric_patterns):
-             item["score"] += 0.2
+        # А) Базовый NER-бонус (совпадение терминов)
+        matches = keywords_from_json.intersection(chunk_normalized)
+        c["score"] += len(matches) * 0.05
 
-         # В) Штраф за описание изображений
-            stop_patterns = ["рис.", "рисунок", "вид сбоку", "снимок", "визуализация", "иллюстрация", "график"]
-            if any(stop in text_lower for stop in stop_patterns):
-             item["score"] -= 0.15
+        # Б) Бонус за числовые нормативы
+        numeric_patterns = [
+            r'\d{1,2}(\.\d)?\s?мм',
+            r'[><=]\s?\d{1,2}',
+            r'от\s\d{1,2}\sдо\s\d{1,2}'
+        ]
+        for pattern in numeric_patterns:
+            if re.search(pattern, chunk_lower):
+                c["score"] += 0.15
 
-         # Г) Штраф за ссылки на литературу
-            reference_matches = re.findall(r'\[[\d,\s\-]+\]', text_lower)
-            item["score"] -= len(reference_matches) * 0.005
+        # В) Штраф за картинки
+        stop_patterns = ["Рис.", "рисунок", "вид сбоку", "снимок", "визуализация", "иллюстрация", "график"]
+        for stop_word in stop_patterns:
+            if stop_word in chunk_lower:
+                c["score"] -= 0.10
 
-    final_chunks = [c for c in preliminary_results if c["final_score"] >= min_score]
-    final_chunks.sort(key=lambda x: x["final_score"], reverse=True)
-    selected = final_chunks[:top_k]
+        # Г) Штраф за ссылки на литературу [1]
+        reference_matches = re.findall(r'\[[\d,\s\-]+\]', chunk_lower)
+        if reference_matches:
+            c["score"] -= len(reference_matches) * 0.005
+    return candidates
+
+# def retrieve_top_k(query: str, kb: Dict[str, Any], json_data: Optional[Dict] = None, use_hybrid_search: bool = True, use_cross_encoding: bool = True,
+#     top_k: int = TOP_K, min_score: float = MIN_RELEVANCE_SCORE) -> Dict[str, Any]:   
+#     enriched_query = str(query)
+#     keywords_from_json = set()
+#     if json_data:
+#         translated_list = []
+#         for key in json_data.keys():
+#             clean_key = key.strip()
+#             russian_term = TRANSLATION_MAP.get(clean_key)
+#             if russian_term:
+#                 translated_list.append(russian_term)
+#                 keywords_from_json.update(_normalize_text(russian_term))
+        
+#         zones_str = " ".join(translated_list)
+#         enriched_query += f" {zones_str} Максимальные диаметры, Минимальный диаметр, Периметр сосуда, Площадь поперечного сечения, норма диаметр классификация показатели мм превышать"
+        
+#         raw_keywords = _extract_keywords_from_json(json_data)
+#         for kw in raw_keywords:
+#             keywords_from_json.update(_normalize_text(kw))
+
+#     chunks = kb.get("chunks", [])
+#     embeddings = kb.get("embeddings")
+#     if not chunks or embeddings is None or len(chunks) == 0:
+#         return {"chunks": [], "sources": []}
+
+#     #Cosine Similarity (Dense Retrieval)
+#     query_embedding = embed_texts([enriched_query], is_query=True)
+#     cos_scores = np.dot(embeddings, query_embedding[0])
+#     cos_ranks = np.argsort(cos_scores)[::-1]
+
+#     #BM25 Score (Lexical Retrieval)
+#     bm25_scores, bm25_ranks = None, None
+#     if use_hybrid_search and kb.get("bm25_index"):
+#         query_tokens = _tokenize_bm25(enriched_query)
+#         bm25_scores = kb["bm25_index"].get_scores(query_tokens)
+#         bm25_ranks = np.argsort(bm25_scores)[::-1]
+
+#     #RRF Fusion (Reciprocal Rank Fusion)
+#     rrf_scores = np.zeros(len(chunks))
+#     K_RRF = 60.0
+#     def apply_rrf(ranks: np.ndarray, target: np.ndarray):
+#         for rank, idx in enumerate(ranks, start=1):
+#             target[idx] += 1.0 / (K_RRF + rank)
+
+#     apply_rrf(cos_ranks, rrf_scores)
+#     if use_hybrid_search and bm25_ranks is not None:
+#         apply_rrf(bm25_ranks, rrf_scores)
+
+#     #Кандидаты для кросс-энкодинга (топ * 3)
+#     candidate_indices = np.argsort(rrf_scores)[::-1][:(top_k * 3)]
+#     preliminary_results = []
+#     for idx in candidate_indices:
+#         idx = int(idx)
+#         preliminary_results.append({
+#             "source": chunks[idx]["source"], "chunk_id": chunks[idx]["chunk_id"],
+#             "text": chunks[idx]["text"], "index": idx, "rrf_score": float(rrf_scores[idx])
+#         })
+
+#     #Cross-Encoder Reranking
+#     if use_cross_encoding and preliminary_results:
+#         pairs = [[enriched_query, item["text"]] for item in preliminary_results]
+#         ce_scores = CROSS_ENCODER.predict(pairs, show_progress_bar=False)
+#         for i, item in enumerate(preliminary_results):
+#             item["final_score"] = 0.3 * item["rrf_score"] + 0.7 * float(ce_scores[i])
+#             item["score"] = item["final_score"]
+#     else:
+#         for item in preliminary_results:
+#             item["final_score"] = item["rrf_score"]
+#             item["score"] = item["final_score"]
+
+#      for item in preliminary_results:
+#           text_lower = item["text"].lower()
+#           text_normalized = _normalize_text(item["text"])
+
+#          # А) Бонус за совпадение терминов из JSON
+#             matches = keywords_from_json.intersection(text_normalized)
+#             item["score"] += len(matches) * 0.05
+
+#          # Б) Бонус за числовые нормативы
+#             numeric_patterns = [
+#              r'\d{1,2}(\.\d)?\s?мм', 
+#              r'[><=]\s?\d{1,2}', 
+#              r'от\s\d{1,2}\sдо\s\d{1,2}'
+#          ]
+#             if any(re.search(p, text_lower) for p in numeric_patterns):
+#              item["score"] += 0.2
+
+#          # В) Штраф за описание изображений
+#             stop_patterns = ["рис.", "рисунок", "вид сбоку", "снимок", "визуализация", "иллюстрация", "график"]
+#             if any(stop in text_lower for stop in stop_patterns):
+#              item["score"] -= 0.15
+
+#          # Г) Штраф за ссылки на литературу
+#             reference_matches = re.findall(r'\[[\d,\s\-]+\]', text_lower)
+#             item["score"] -= len(reference_matches) * 0.005
+
+#     final_chunks = [c for c in preliminary_results if c["final_score"] >= min_score]
+#     final_chunks.sort(key=lambda x: x["final_score"], reverse=True)
+#     selected = final_chunks[:top_k]
             
-    return {
-        "chunks": selected,
-        "sources": list(set(c["source"] for c in selected))
-    }
+#     return {
+#         "chunks": selected,
+#         "sources": list(set(c["source"] for c in selected))
+#     }
 
 # Узлы графа
 
@@ -389,24 +467,53 @@ def initialize_kb(state: MedGraphState) -> MedGraphState:
 def retrieve_text_context(state: MedGraphState) -> MedGraphState:
     warnings = list(state.get("warnings", []))
     paths = state.get("guideline_paths", [])
-
     if not paths:
-        return {**state, "retrieved_guidelines": [], "warnings": warnings + ["Не переданы пути к гайдлайнам"]  }
+        return {**state, "retrieved_guidelines": [], "warnings": warnings + ["Не переданы пути к гайдлайнам"]}
 
     docs_path = paths[0]
     kb = KB_CACHE.get(docs_path)
     if kb is None:
         return {**state, "retrieved_guidelines": [], "warnings": warnings + ["KB не инициализирована"]}
 
-    query = f"{state.get('query', '')}\n{state.get('patient_history', '')}".strip()
-    retrieved = retrieve_top_k(query, kb=kb, use_hybrid_search=True, use_cross_encoding=True, top_k=TOP_K, min_score=MIN_RELEVANCE_SCORE)
+    patient_data = state.get("patient_data", {})
+    
+    symptom_query = f"{state.get('query', '')}\n{state.get('patient_history', '')}".strip()
+    symptom_results = hybrid_retrieve(symptom_query, kb, top_k=2)
 
-    if not retrieved:
+    json_query = ""
+    keywords_from_json = set()
+    if patient_data and isinstance(patient_data, dict):
+        translated_list = []
+        for key in patient_data.keys():
+            clean_key = key.strip()
+            russian_term = TRANSLATION_MAP.get(clean_key) if 'TRANSLATION_MAP' in globals() else None
+            if russian_term:
+                translated_list.append(russian_term)
+                keywords_from_json.update(_normalize_text(russian_term))
+        zones_str = " ".join(translated_list)
+        json_query += f" {zones_str} Максимальные диаметры, Минимальный диаметр, Периметр сосуда, Площадь поперечного сечения, норма диаметр классификация показатели мм превышать"
+
+    json_candidates = hybrid_retrieve(json_query, kb, top_k=10)
+    json_candidates = _apply_json_heuristics(json_candidates, keywords_from_json)
+    json_candidates = [c for c in json_candidates if c["score"] >= MIN_RELEVANCE_SCORE]
+    json_candidates.sort(key=lambda x: x["score"], reverse=True)
+    json_results = json_candidates[:3]
+
+    seen = set()
+    merged_results = []
+    for item in symptom_results + json_results:
+        uid = (item["source"], item["chunk_id"])
+        if uid not in seen:
+            seen.add(uid)
+            merged_results.append(item)
+
+    merged_results.sort(key=lambda x: x["score"], reverse=True)
+    final_guidelines = merged_results[:5]  # Гарантируем максимум 2+3 = 5
+
+    if not final_guidelines:
         warnings.append("Ретривер не нашёл релевантных фрагментов")
 
-    return {**state,
-            "retrieved_guidelines": retrieved["chunks"],
-            "warnings": warnings}
+    return {**state, "retrieved_guidelines": final_guidelines, "warnings": warnings}
 
 def fuse_context(state: MedGraphState) -> MedGraphState:
     blocks = []

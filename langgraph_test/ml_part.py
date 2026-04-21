@@ -10,7 +10,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import StateGraph, START, END
 from pypdf import PdfReader
-from sentence_transformers import SentenceTransformer, models
+from sentence_transformers import SentenceTransformer, models, CrossEncoder
 import json 
 import pymorphy3
 
@@ -25,7 +25,7 @@ VLLM_API_KEY = os.getenv("VLLM_API_KEY", "token-abc123")
 VLLM_MODEL = os.getenv("VLLM_MODEL", "Qwen/Qwen2.5-0.5B-Instruct")
 
 EMBEDDING_MODEL_NAME = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
-CROSS_ENCODER_MODEL_NAME = "cross-encoder/multilingual-MiniLM-L12-v2"
+CROSS_ENCODER_MODEL_NAME = "cross-encoder/ms-marco-MiniLM-L12-v2"
 CROSS_ENCODER = CrossEncoder(CROSS_ENCODER_MODEL_NAME, device="cpu")
 
 CHUNK_SIZE = 700
@@ -289,35 +289,37 @@ def retrieve_top_k(query: str, kb: Dict[str, Any], json_data: Optional[Dict] = N
         ce_scores = CROSS_ENCODER.predict(pairs, show_progress_bar=False)
         for i, item in enumerate(preliminary_results):
             item["final_score"] = 0.3 * item["rrf_score"] + 0.7 * float(ce_scores[i])
+            item["score"] = item["final_score"]
     else:
         for item in preliminary_results:
             item["final_score"] = item["rrf_score"]
+            item["score"] = item["final_score"]
 
-    # for item in preliminary_results:
-    #     text_lower = item["text"].lower()
-    #     text_normalized = _normalize_text(item["text"])
+        for item in preliminary_results:
+            text_lower = item["text"].lower()
+            text_normalized = _normalize_text(item["text"])
 
-    #     # А) Бонус за совпадение терминов из JSON
-    #     matches = keywords_from_json.intersection(text_normalized)
-    #     item["score"] += len(matches) * 0.05
+         # А) Бонус за совпадение терминов из JSON
+            matches = keywords_from_json.intersection(text_normalized)
+            item["score"] += len(matches) * 0.05
 
-    #     # Б) Бонус за числовые нормативы
-    #     numeric_patterns = [
-    #         r'\d{1,2}(\.\d)?\s?мм', 
-    #         r'[><=]\s?\d{1,2}', 
-    #         r'от\s\d{1,2}\sдо\s\d{1,2}'
-    #     ]
-    #     if any(re.search(p, text_lower) for p in numeric_patterns):
-    #         item["score"] += 0.2
+         # Б) Бонус за числовые нормативы
+            numeric_patterns = [
+             r'\d{1,2}(\.\d)?\s?мм', 
+             r'[><=]\s?\d{1,2}', 
+             r'от\s\d{1,2}\sдо\s\d{1,2}'
+         ]
+            if any(re.search(p, text_lower) for p in numeric_patterns):
+             item["score"] += 0.2
 
-    #     # В) Штраф за описание изображений
-    #     stop_patterns = ["рис.", "рисунок", "вид сбоку", "снимок", "визуализация", "иллюстрация", "график"]
-    #     if any(stop in text_lower for stop in stop_patterns):
-    #         item["score"] -= 0.15
+         # В) Штраф за описание изображений
+            stop_patterns = ["рис.", "рисунок", "вид сбоку", "снимок", "визуализация", "иллюстрация", "график"]
+            if any(stop in text_lower for stop in stop_patterns):
+             item["score"] -= 0.15
 
-    #     # Г) Штраф за ссылки на литературу
-    #     #reference_matches = re.findall(r'\[[\d,\s\-]+\]', text_lower)
-    #     #item["score"] -= len(reference_matches) * 0.005
+         # Г) Штраф за ссылки на литературу
+            reference_matches = re.findall(r'\[[\d,\s\-]+\]', text_lower)
+            item["score"] -= len(reference_matches) * 0.005
 
     final_chunks = [c for c in preliminary_results if c["final_score"] >= min_score]
     final_chunks.sort(key=lambda x: x["final_score"], reverse=True)
@@ -369,11 +371,20 @@ def initialize_kb(state: MedGraphState) -> MedGraphState:
             kb = KB_CACHE[docs_path]
         if not kb["chunks"]:
             warnings.append("После разбиения документов не получено ни одного чанка")
-        return { **state, "chunks": kb["chunks"], "warnings": warnings, "errors": errors}
+        return { **state,
+                "chunks": kb["chunks"],
+                "warnings": warnings,
+                "errors": errors,
+                "guideline_docs": kb.get("docs", []),
+                }
 
     except Exception as e:
-        return { **state, "warnings": warnings + [f"Не удалось инициализировать KB: {e}"], "errors": errors,
-            "guideline_docs": [], "chunks": []}
+        return { **state,
+                "warnings": warnings + [f"Не удалось инициализировать KB: {e}"],
+                "errors": errors,
+                "guideline_docs": kb.get("docs", []),
+                "chunks": [],
+                }
 
 def retrieve_text_context(state: MedGraphState) -> MedGraphState:
     warnings = list(state.get("warnings", []))
@@ -393,7 +404,9 @@ def retrieve_text_context(state: MedGraphState) -> MedGraphState:
     if not retrieved:
         warnings.append("Ретривер не нашёл релевантных фрагментов")
 
-    return {**state, "retrieved_guidelines": retrieved["chunks"], "warnings": warnings}
+    return {**state,
+            "retrieved_guidelines": retrieved["chunks"],
+            "warnings": warnings}
 
 def fuse_context(state: MedGraphState) -> MedGraphState:
     blocks = []
@@ -403,7 +416,7 @@ def fuse_context(state: MedGraphState) -> MedGraphState:
             f"[GUIDELINE {i}]\n"
             f"Источник: {item['source']}\n"
             f"Chunk: {item['chunk_id']}\n"
-            f"Score: {item['score']:.4f}\n"
+            f"Score: {item['final_score']:.4f}\n"
             f"Текст: {item['text']}"
         )
 
@@ -530,9 +543,6 @@ if __name__ == "__main__":
 
     print("\n=== ERRORS ===")
     print(result.get("errors", []))
-
-    print("\n=== DOCS ===")
-    print(len(result.get("guideline_docs", [])))
 
     print("\n=== CHUNKS ===")
     print(len(result.get("chunks", [])))

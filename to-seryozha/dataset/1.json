@@ -1,0 +1,65 @@
+{
+    "Descending Aorta": {
+        "max_diam_1": 30.364452901377952,
+        "max_diam_2": 29.740544715926102,
+        "min_diam": 25.93260495977988,
+        "perimetr": 93.84062043356596,
+        "area": 600,
+        "ct_img": "1_ct_Descending Aorta.png",
+        "mask_img": "1_mask_Descending Aorta.png"
+    },
+    "Isthmus": {
+        "max_diam_1": 36.235341863986875,
+        "max_diam_2": 36.235341863986875,
+        "min_diam": 32.01562118716424,
+        "perimetr": 117.74011537017762,
+        "area": 905,
+        "ct_img": "1_ct_Isthmus.png",
+        "mask_img": "1_mask_Isthmus.png"
+    },
+    "Arch after LSA": {
+        "max_diam_1": 35.510561809129406,
+        "max_diam_2": 34.785054261852174,
+        "min_diam": 30.01666203960727,
+        "perimetr": 112.66904755831214,
+        "area": 817,
+        "ct_img": "1_ct_Arch after LSA.png",
+        "mask_img": "1_mask_Arch after LSA.png"
+    },
+    "Arch after LCCA": {
+        "max_diam_1": 34.9857113690718,
+        "max_diam_2": 34.438350715445125,
+        "min_diam": 32.01562118716424,
+        "perimetr": 115.49747468305834,
+        "area": 847,
+        "ct_img": "1_ct_Arch after LCCA.png",
+        "mask_img": "1_mask_Arch after LCCA.png"
+    },
+    "Arch after TBC": {
+        "max_diam_1": 36.71511950137164,
+        "max_diam_2": 36.49657518178932,
+        "min_diam": 33.54101966249684,
+        "perimetr": 126.2253967444162,
+        "area": 937,
+        "ct_img": "1_ct_Arch after TBC.png",
+        "mask_img": "1_mask_Arch after TBC.png"
+    },
+    "Ascending Aorta befor TBC": {
+        "max_diam_1": 38.3275357934736,
+        "max_diam_2": 38.01315561749642,
+        "min_diam": 35.92352989337211,
+        "perimetr": 128.36753236814715,
+        "area": 1047,
+        "ct_img": "1_ct_Ascending Aorta befor TBC.png",
+        "mask_img": "1_mask_Ascending Aorta befor TBC.png"
+    },
+    "Ascending Aorta": {
+        "max_diam_1": 38.62641583165593,
+        "max_diam_2": 38.268786236304905,
+        "min_diam": 35.36240942017385,
+        "perimetr": 128.12489168102786,
+        "area": 1051,
+        "ct_img": "1_ct_Ascending Aorta.png",
+        "mask_img": "1_mask_Ascending Aorta.png"
+    }
+}

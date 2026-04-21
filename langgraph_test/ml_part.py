@@ -9,8 +9,9 @@ from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import StateGraph, START, END
 from pypdf import PdfReader
-from sentence_transformers import SentenceTransformer
+from sentence_transformers import SentenceTransformer, models
 import json 
+import pymorphy3
 
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 load_dotenv()
@@ -19,13 +20,25 @@ VLLM_BASE_URL = os.getenv("VLLM_BASE_URL", "http://localhost:8000/v1")
 VLLM_API_KEY = os.getenv("VLLM_API_KEY", "token-abc123")
 VLLM_MODEL = os.getenv("VLLM_MODEL", "Qwen/Qwen2.5-0.5B-Instruct")
 
-EMBEDDING_MODEL_NAME = "DmitryPogrebnoy/MedRuBertTiny2"
+EMBEDDING_MODEL_NAME = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
 CHUNK_SIZE = 700
 CHUNK_OVERLAP = 100
 TOP_K = 4
 MIN_RELEVANCE_SCORE = 0.20
 
-EMBEDDER = SentenceTransformer(EMBEDDING_MODEL_NAME, device="cpu")
+KB_DISK_CACHE_DIR = Path(".kb_cache")
+KB_DISK_CACHE_DIR.mkdir(exist_ok=True)
+
+word_embedding_model = models.Transformer(EMBEDDING_MODEL_NAME)
+
+pooling_model = models.Pooling(
+        word_embedding_model.get_word_embedding_dimension(),
+        pooling_mode_mean_tokens=True,
+        pooling_mode_cls_token=False,
+        pooling_mode_max_tokens=False,
+)
+
+EMBEDDER = SentenceTransformer(modules=[word_embedding_model, pooling_model], device="cpu")
 KB_CACHE: Dict[str, Dict[str, Any]] = {}
 
 
@@ -50,6 +63,37 @@ class MedGraphState(TypedDict, total=False):
     final_prompt: str
     raw_llm_output: str
 
+# Вспомогательные функции
+def get_cache_prefix(folder_path: str) -> Path:
+    safe_name = Path(folder_path).name.replace(" ", "_")
+    return KB_DISK_CACHE_DIR / safe_name
+
+def save_kb_to_disk(folder_path: str, kb: Dict[str, Any]) -> None:
+    prefix = get_cache_prefix(folder_path)
+
+    with open(f"{prefix}_chunks.json", "w", encoding="utf-8") as f:
+        json.dump(kb["chunks"], f, ensure_ascii=False, indent=2)
+
+    np.save(f"{prefix}_embeddings.npy", kb["embeddings"])
+
+def load_kb_from_disk(folder_path: str) -> Optional[Dict[str, Any]]:
+    prefix = get_cache_prefix(folder_path)
+
+    chunks_file = Path(f"{prefix}_chunks.json")
+    emb_file = Path(f"{prefix}_embeddings.npy")
+
+    if not (chunks_file.exists() and emb_file.exists()):
+        return None
+
+    with open(chunks_file, "r", encoding="utf-8") as f:
+        chunks = json.load(f)
+
+    embeddings = np.load(emb_file)
+
+    return {
+            "chunks": chunks,
+            "embeddings": embeddings,
+        }
 
 def read_documents(folder: Path) -> List[Dict[str, Any]]:
     docs: List[Dict[str, Any]] = []
@@ -123,11 +167,15 @@ def build_chunks(docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return result
 
 
-def embed_texts(texts: List[str]) -> np.ndarray:
+def embed_texts(texts: List[str], is_query: bool = False) -> np.ndarray:
     if not texts:
         return np.empty((0, 0), dtype=np.float32)
+
+    prefix = "query: " if is_query else "passage: "
+    prepared_texts = [prefix + t for t in texts]
+
     embeddings = EMBEDDER.encode(
-        texts,
+        prepared_texts,
         normalize_embeddings=True,
         batch_size=8,
         convert_to_numpy=True,
@@ -148,6 +196,12 @@ def build_kb(folder_path: str) -> Dict[str, Any]:
         "chunks": chunks,
         "embeddings": embeddings,
     }
+
+morph = pymorphy3.MorphAnalyzer()
+
+def _normalize_text(text: str) -> set:
+    words = re.findall(r'\b[а-яА-ЯёЁa-zA-Z]{3,}\b', text.lower())
+    return {morph.parse(w)[0].normal_form for w in words}
 
 def retrieve_top_k(query: str, kb: Dict[str, Any], json_data: Optional[Dict] = None, top_k: int = 5, min_score: float = 0.5) -> Dict[str, Any]:
     enriched_query = str(query)
@@ -171,7 +225,7 @@ def retrieve_top_k(query: str, kb: Dict[str, Any], json_data: Optional[Dict] = N
     embeddings = kb.get("embeddings")
     if not chunks or embeddings is None or len(chunks) == 0:
         return {"chunks": [], "sources": []}
-    query_embedding = embed_texts([enriched_query])
+    query_embedding = embed_texts([enriched_query], is_query=True)
     if query_embedding.size == 0:
         return {"chunks": [], "sources": []}
     scores = np.dot(embeddings, query_embedding[0])
@@ -199,7 +253,7 @@ def retrieve_top_k(query: str, kb: Dict[str, Any], json_data: Optional[Dict] = N
             r'от\s\d{1,2}\sдо\s\d{1,2}'
         ]
         if any(re.search(p, text_lower) for p in numeric_patterns):
-            item["score"] += 0.15
+            item["score"] += 0.2
 
         # В) Штраф за описание изображений
         stop_patterns = ["рис.", "рисунок", "вид сбоку", "снимок", "визуализация", "иллюстрация", "график"]
@@ -207,8 +261,8 @@ def retrieve_top_k(query: str, kb: Dict[str, Any], json_data: Optional[Dict] = N
             item["score"] -= 0.15
 
         # Г) Штраф за ссылки на литературу
-        reference_matches = re.findall(r'\[[\d,\s\-]+\]', text_lower)
-        item["score"] -= len(reference_matches) * 0.005
+        #reference_matches = re.findall(r'\[[\d,\s\-]+\]', text_lower)
+        #item["score"] -= len(reference_matches) * 0.005
 
     final_chunks = [c for c in preliminary_results if c["score"] >= min_score]
     final_chunks.sort(key=lambda x: x["score"], reverse=True)
@@ -237,8 +291,6 @@ def ingest_request(state: MedGraphState) -> MedGraphState:
         "warnings": warnings,
     }
 
-
-
 def initialize_kb(state: MedGraphState) -> MedGraphState:
     warnings = list(state.get("warnings", []))
     errors = list(state.get("errors", []))
@@ -255,21 +307,29 @@ def initialize_kb(state: MedGraphState) -> MedGraphState:
 
     try:
         if docs_path not in KB_CACHE:
-            KB_CACHE[docs_path] = build_kb(docs_path)
+            kb = load_kb_from_disk(docs_path)
+
+            if kb is None:
+                print("KB cache not found. Building from scratch...")
+                kb = build_kb(docs_path)
+                save_kb_to_disk(docs_path, kb)
+            else:
+                print("KB loaded from disk cache.")
+
+            KB_CACHE[docs_path] = kb
 
         kb = KB_CACHE[docs_path]
-        if not kb["docs"]:
-            warnings.append(f"В папке {docs_path!r} не найдено ни одного читаемого .txt/.pdf документа")
+
         if not kb["chunks"]:
             warnings.append("После разбиения документов не получено ни одного чанка")
 
         return {
             **state,
-            "guideline_docs": kb["docs"],
             "chunks": kb["chunks"],
             "warnings": warnings,
             "errors": errors,
         }
+
     except Exception as e:
         return {
             **state,
@@ -278,8 +338,6 @@ def initialize_kb(state: MedGraphState) -> MedGraphState:
             "guideline_docs": [],
             "chunks": [],
         }
-
-
 
 def retrieve_text_context(state: MedGraphState) -> MedGraphState:
     warnings = list(state.get("warnings", []))
@@ -309,7 +367,7 @@ def retrieve_text_context(state: MedGraphState) -> MedGraphState:
 
     return {
         **state,
-        "retrieved_guidelines": retrieved,
+        "retrieved_guidelines": retrieved["chunks"],
         "warnings": warnings,
     }
 
@@ -350,10 +408,8 @@ def build_prompt(state: MedGraphState) -> MedGraphState:
     prompt = f"""
 Вы — врач-кардиохирург, эксперт в области кардиологии и сосудистой хирургии с 50-летним опытом. Ваша специализация: анализ КТ-ангиографии аорты, оценка аневризм, диссекций и стенозирующих поражений.
 Сформируйте заключение врача-кардиохирурга, основываясь на данных измерений КТ аорты
-Справочные данные и клинические рекомендации:
+Справочные данные и клинические рекомендации, a так же жалобы и анамнез:
 {state.get("fused_context", "")}
-
-Жалобы и анамнез пациента: ???????
 
 Результаты КТ (структурированные данные):
 {patient_data_text}
@@ -431,8 +487,7 @@ if __name__ == "__main__":
     graph = build_graph()
 
     initial_state: MedGraphState = {
-        "query": "боль в груди, между лопатками, в верхней части спины, шее, затруднённое дыхание, одышка, хрипы, кашель,ощущение комка в горле. Врожденных патологий нет"
-        #"Кашель, температура, слабость, одышка",
+        "query": "боль в груди, между лопатками, в верхней части спины, шее, затруднённое дыхание, одышка, хрипы, кашель,ощущение комка в горле. Врожденных патологий нет",
         "patient_history": "Мужчина, 54 лет, длительный стаж курения",
         "guideline_paths": ["docs"],
         "warnings": [],
@@ -469,3 +524,4 @@ if __name__ == "__main__":
 
     print("\n=== ANSWER ===")
     print(result.get("raw_llm_output", ""))
+

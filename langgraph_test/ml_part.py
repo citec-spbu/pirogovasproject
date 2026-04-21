@@ -1,3 +1,4 @@
+#pip install rank-bm25
 import os
 from pathlib import Path
 from typing import TypedDict, List, Dict, Any, Optional
@@ -13,6 +14,9 @@ from sentence_transformers import SentenceTransformer, models
 import json 
 import pymorphy3
 
+import pickle
+from rank_bm25 import BM25Okapi
+
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 load_dotenv()
 
@@ -21,6 +25,9 @@ VLLM_API_KEY = os.getenv("VLLM_API_KEY", "token-abc123")
 VLLM_MODEL = os.getenv("VLLM_MODEL", "Qwen/Qwen2.5-0.5B-Instruct")
 
 EMBEDDING_MODEL_NAME = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+CROSS_ENCODER_MODEL_NAME = "cross-encoder/multilingual-MiniLM-L12-v2"
+CROSS_ENCODER = CrossEncoder(CROSS_ENCODER_MODEL_NAME, device="cpu")
+
 CHUNK_SIZE = 700
 CHUNK_OVERLAP = 100
 TOP_K = 4
@@ -28,6 +35,9 @@ MIN_RELEVANCE_SCORE = 0.20
 
 KB_DISK_CACHE_DIR = Path(".kb_cache")
 KB_DISK_CACHE_DIR.mkdir(exist_ok=True)
+
+KB_BM25_DISK_CACHE_DIR = Path(".kb_cache_bm25")
+KB_BM25_DISK_CACHE_DIR.mkdir(exist_ok=True)
 
 word_embedding_model = models.Transformer(EMBEDDING_MODEL_NAME)
 
@@ -63,37 +73,49 @@ class MedGraphState(TypedDict, total=False):
     final_prompt: str
     raw_llm_output: str
 
-# Вспомогательные функции
-def get_cache_prefix(folder_path: str) -> Path:
+def _tokenize_bm25(text: str) -> List[str]:
+    return re.findall(r'[а-яА-ЯёЁa-zA-Z0-9]{2,}', text.lower())
+
+def get_cache_prefix(folder_path: str, use_bm25: bool = False) -> Path:
+    base_dir = KB_BM25_DISK_CACHE_DIR if use_bm25 else KB_DISK_CACHE_DIR
     safe_name = Path(folder_path).name.replace(" ", "_")
-    return KB_DISK_CACHE_DIR / safe_name
+    return base_dir / safe_name
 
-def save_kb_to_disk(folder_path: str, kb: Dict[str, Any]) -> None:
-    prefix = get_cache_prefix(folder_path)
-
+def save_kb_to_disk(folder_path: str, kb: Dict[str, Any], use_bm25: bool = False) -> None:
+    prefix = get_cache_prefix(folder_path, use_bm25)
+    prefix.parent.mkdir(parents=True, exist_ok=True)
     with open(f"{prefix}_chunks.json", "w", encoding="utf-8") as f:
         json.dump(kb["chunks"], f, ensure_ascii=False, indent=2)
-
+            
     np.save(f"{prefix}_embeddings.npy", kb["embeddings"])
+    
+    if use_bm25 and "bm25_corpus" in kb:
+        with open(f"{prefix}_bm25_corpus.pkl", "wb") as f:
+            pickle.dump(kb["bm25_corpus"], f)
 
-def load_kb_from_disk(folder_path: str) -> Optional[Dict[str, Any]]:
-    prefix = get_cache_prefix(folder_path)
-
+def load_kb_from_disk(folder_path: str, use_bm25: bool = False) -> Optional[Dict[str, Any]]:
+    prefix = get_cache_prefix(folder_path, use_bm25)
+        
     chunks_file = Path(f"{prefix}_chunks.json")
     emb_file = Path(f"{prefix}_embeddings.npy")
-
+    
     if not (chunks_file.exists() and emb_file.exists()):
         return None
-
+        
     with open(chunks_file, "r", encoding="utf-8") as f:
         chunks = json.load(f)
-
+            
     embeddings = np.load(emb_file)
-
-    return {
-            "chunks": chunks,
-            "embeddings": embeddings,
-        }
+    
+    kb = {"chunks": chunks, "embeddings": embeddings}
+    if use_bm25:
+        corpus_file = Path(f"{prefix}_bm25_corpus.pkl")
+        if corpus_file.exists():
+            with open(corpus_file, "rb") as f:
+                corpus = pickle.load(f)
+            kb["bm25_corpus"] = corpus
+            kb["bm25_index"] = BM25Okapi(corpus)
+    return kb
 
 def read_documents(folder: Path) -> List[Dict[str, Any]]:
     docs: List[Dict[str, Any]] = []
@@ -183,19 +205,19 @@ def embed_texts(texts: List[str], is_query: bool = False) -> np.ndarray:
     )
     return embeddings.astype("float32")
 
-
-def build_kb(folder_path: str) -> Dict[str, Any]:
+def build_kb(folder_path: str, use_bm25: bool = True) -> Dict[str, Any]:
     folder = Path(folder_path)
     docs = read_documents(folder)
     chunks = build_chunks(docs)
     texts = [c["text"] for c in chunks]
     embeddings = embed_texts(texts) if texts else np.empty((0, 0), dtype=np.float32)
-
-    return {
-        "docs": docs,
-        "chunks": chunks,
-        "embeddings": embeddings,
-    }
+    
+    kb = {"docs": docs, "chunks": chunks, "embeddings": embeddings}
+    if use_bm25 and texts:
+        corpus = [_tokenize_bm25(t) for t in texts]
+        kb["bm25_corpus"] = corpus
+        kb["bm25_index"] = BM25Okapi(corpus)
+    return kb
 
 morph = pymorphy3.MorphAnalyzer()
 
@@ -203,7 +225,8 @@ def _normalize_text(text: str) -> set:
     words = re.findall(r'\b[а-яА-ЯёЁa-zA-Z]{3,}\b', text.lower())
     return {morph.parse(w)[0].normal_form for w in words}
 
-def retrieve_top_k(query: str, kb: Dict[str, Any], json_data: Optional[Dict] = None, top_k: int = 5, min_score: float = 0.5) -> Dict[str, Any]:
+def retrieve_top_k(query: str, kb: Dict[str, Any], json_data: Optional[Dict] = None, use_hybrid_search: bool = True, use_cross_encoding: bool = True,
+    top_k: int = TOP_K, min_score: float = MIN_RELEVANCE_SCORE) -> Dict[str, Any]:   
     enriched_query = str(query)
     keywords_from_json = set()
     if json_data:
@@ -221,56 +244,88 @@ def retrieve_top_k(query: str, kb: Dict[str, Any], json_data: Optional[Dict] = N
         raw_keywords = _extract_keywords_from_json(json_data)
         for kw in raw_keywords:
             keywords_from_json.update(_normalize_text(kw))
+
     chunks = kb.get("chunks", [])
     embeddings = kb.get("embeddings")
     if not chunks or embeddings is None or len(chunks) == 0:
         return {"chunks": [], "sources": []}
+
+    #Cosine Similarity (Dense Retrieval)
     query_embedding = embed_texts([enriched_query], is_query=True)
-    if query_embedding.size == 0:
-        return {"chunks": [], "sources": []}
-    scores = np.dot(embeddings, query_embedding[0])
-    candidate_indices = np.argsort(scores)[::-1][:(top_k * 3)]
+    cos_scores = np.dot(embeddings, query_embedding[0])
+    cos_ranks = np.argsort(cos_scores)[::-1]
+
+    #BM25 Score (Lexical Retrieval)
+    bm25_scores, bm25_ranks = None, None
+    if use_hybrid_search and kb.get("bm25_index"):
+        query_tokens = _tokenize_bm25(enriched_query)
+        bm25_scores = kb["bm25_index"].get_scores(query_tokens)
+        bm25_ranks = np.argsort(bm25_scores)[::-1]
+
+    #RRF Fusion (Reciprocal Rank Fusion)
+    rrf_scores = np.zeros(len(chunks))
+    K_RRF = 60.0
+    def apply_rrf(ranks: np.ndarray, target: np.ndarray):
+        for rank, idx in enumerate(ranks, start=1):
+            target[idx] += 1.0 / (K_RRF + rank)
+
+    apply_rrf(cos_ranks, rrf_scores)
+    if use_hybrid_search and bm25_ranks is not None:
+        apply_rrf(bm25_ranks, rrf_scores)
+
+    #Кандидаты для кросс-энкодинга (топ * 3)
+    candidate_indices = np.argsort(rrf_scores)[::-1][:(top_k * 3)]
     preliminary_results = []
     for idx in candidate_indices:
-        chunk = chunks[int(idx)]
+        idx = int(idx)
         preliminary_results.append({
-            "source": chunk["source"],
-            "chunk_id": chunk["chunk_id"],
-            "text": chunk["text"],
-            "score": float(scores[idx])})
-    for item in preliminary_results:
-        text_lower = item["text"].lower()
-        text_normalized = _normalize_text(item["text"])
+            "source": chunks[idx]["source"], "chunk_id": chunks[idx]["chunk_id"],
+            "text": chunks[idx]["text"], "index": idx, "rrf_score": float(rrf_scores[idx])
+        })
 
-        # А) Бонус за совпадение терминов из JSON
-        matches = keywords_from_json.intersection(text_normalized)
-        item["score"] += len(matches) * 0.05
+    #Cross-Encoder Reranking
+    if use_cross_encoding and preliminary_results:
+        pairs = [[enriched_query, item["text"]] for item in preliminary_results]
+        ce_scores = CROSS_ENCODER.predict(pairs, show_progress_bar=False)
+        for i, item in enumerate(preliminary_results):
+            item["final_score"] = 0.3 * item["rrf_score"] + 0.7 * float(ce_scores[i])
+    else:
+        for item in preliminary_results:
+            item["final_score"] = item["rrf_score"]
 
-        # Б) Бонус за числовые нормативы
-        numeric_patterns = [
-            r'\d{1,2}(\.\d)?\s?мм', 
-            r'[><=]\s?\d{1,2}', 
-            r'от\s\d{1,2}\sдо\s\d{1,2}'
-        ]
-        if any(re.search(p, text_lower) for p in numeric_patterns):
-            item["score"] += 0.2
+    # for item in preliminary_results:
+    #     text_lower = item["text"].lower()
+    #     text_normalized = _normalize_text(item["text"])
 
-        # В) Штраф за описание изображений
-        stop_patterns = ["рис.", "рисунок", "вид сбоку", "снимок", "визуализация", "иллюстрация", "график"]
-        if any(stop in text_lower for stop in stop_patterns):
-            item["score"] -= 0.15
+    #     # А) Бонус за совпадение терминов из JSON
+    #     matches = keywords_from_json.intersection(text_normalized)
+    #     item["score"] += len(matches) * 0.05
 
-        # Г) Штраф за ссылки на литературу
-        #reference_matches = re.findall(r'\[[\d,\s\-]+\]', text_lower)
-        #item["score"] -= len(reference_matches) * 0.005
+    #     # Б) Бонус за числовые нормативы
+    #     numeric_patterns = [
+    #         r'\d{1,2}(\.\d)?\s?мм', 
+    #         r'[><=]\s?\d{1,2}', 
+    #         r'от\s\d{1,2}\sдо\s\d{1,2}'
+    #     ]
+    #     if any(re.search(p, text_lower) for p in numeric_patterns):
+    #         item["score"] += 0.2
 
-    final_chunks = [c for c in preliminary_results if c["score"] >= min_score]
-    final_chunks.sort(key=lambda x: x["score"], reverse=True)
-    selected_chunks = final_chunks[:top_k]
+    #     # В) Штраф за описание изображений
+    #     stop_patterns = ["рис.", "рисунок", "вид сбоку", "снимок", "визуализация", "иллюстрация", "график"]
+    #     if any(stop in text_lower for stop in stop_patterns):
+    #         item["score"] -= 0.15
 
+    #     # Г) Штраф за ссылки на литературу
+    #     #reference_matches = re.findall(r'\[[\d,\s\-]+\]', text_lower)
+    #     #item["score"] -= len(reference_matches) * 0.005
+
+    final_chunks = [c for c in preliminary_results if c["final_score"] >= min_score]
+    final_chunks.sort(key=lambda x: x["final_score"], reverse=True)
+    selected = final_chunks[:top_k]
+            
     return {
-        "chunks": selected_chunks,
-        "sources": list(set(c["source"] for c in selected_chunks))
+        "chunks": selected,
+        "sources": list(set(c["source"] for c in selected))
     }
 
 # Узлы графа
@@ -295,83 +350,50 @@ def initialize_kb(state: MedGraphState) -> MedGraphState:
     warnings = list(state.get("warnings", []))
     errors = list(state.get("errors", []))
     paths = state.get("guideline_paths", [])
-
     if not paths:
-        return {
-            **state,
-            "errors": errors + ["Не переданы пути к гайдлайнам"],
-            "warnings": warnings,
-        }
-
+        return { **state, "errors": errors + ["Не переданы пути к гайдлайнам"], "warnings": warnings}
+            
     docs_path = paths[0]
-
+    USE_BM25 = True 
     try:
         if docs_path not in KB_CACHE:
-            kb = load_kb_from_disk(docs_path)
-
+            kb = load_kb_from_disk(docs_path, use_bm25=USE_BM25)
             if kb is None:
                 print("KB cache not found. Building from scratch...")
-                kb = build_kb(docs_path)
-                save_kb_to_disk(docs_path, kb)
+                kb = build_kb(docs_path, use_bm25=USE_BM25)
+                save_kb_to_disk(docs_path, kb, use_bm25=USE_BM25)
             else:
                 print("KB loaded from disk cache.")
-
             KB_CACHE[docs_path] = kb
-
-        kb = KB_CACHE[docs_path]
-
+        else: 
+            kb = KB_CACHE[docs_path]
         if not kb["chunks"]:
             warnings.append("После разбиения документов не получено ни одного чанка")
-
-        return {
-            **state,
-            "chunks": kb["chunks"],
-            "warnings": warnings,
-            "errors": errors,
-        }
+        return { **state, "chunks": kb["chunks"], "warnings": warnings, "errors": errors}
 
     except Exception as e:
-        return {
-            **state,
-            "warnings": warnings + [f"Не удалось инициализировать KB: {e}"],
-            "errors": errors,
-            "guideline_docs": [],
-            "chunks": [],
-        }
+        return { **state, "warnings": warnings + [f"Не удалось инициализировать KB: {e}"], "errors": errors,
+            "guideline_docs": [], "chunks": []}
 
 def retrieve_text_context(state: MedGraphState) -> MedGraphState:
     warnings = list(state.get("warnings", []))
     paths = state.get("guideline_paths", [])
 
     if not paths:
-        return {
-            **state,
-            "retrieved_guidelines": [],
-            "warnings": warnings + ["Не переданы пути к гайдлайнам"],
-        }
+        return {**state, "retrieved_guidelines": [], "warnings": warnings + ["Не переданы пути к гайдлайнам"]  }
 
     docs_path = paths[0]
     kb = KB_CACHE.get(docs_path)
     if kb is None:
-        return {
-            **state,
-            "retrieved_guidelines": [],
-            "warnings": warnings + ["KB не инициализирована"],
-        }
+        return {**state, "retrieved_guidelines": [], "warnings": warnings + ["KB не инициализирована"]}
 
     query = f"{state.get('query', '')}\n{state.get('patient_history', '')}".strip()
-    retrieved = retrieve_top_k(query, kb=kb, top_k=TOP_K, min_score=MIN_RELEVANCE_SCORE)
+    retrieved = retrieve_top_k(query, kb=kb, use_hybrid_search=True, use_cross_encoding=True, top_k=TOP_K, min_score=MIN_RELEVANCE_SCORE)
 
     if not retrieved:
         warnings.append("Ретривер не нашёл релевантных фрагментов")
 
-    return {
-        **state,
-        "retrieved_guidelines": retrieved["chunks"],
-        "warnings": warnings,
-    }
-
-
+    return {**state, "retrieved_guidelines": retrieved["chunks"], "warnings": warnings}
 
 def fuse_context(state: MedGraphState) -> MedGraphState:
     blocks = []

@@ -464,6 +464,20 @@ def initialize_kb(state: MedGraphState) -> MedGraphState:
                 "chunks": [],
                 }
 
+TRANSLATION_MAP = {
+    "Descending Aorta": "Нисходящая аорта",
+    "Isthmus": "Перешеек аорты",
+    "Arch after LSA": "Дуга аорты после отхождения левой подвключичной артерии", # Исправлен ключ под ваш JSON
+    "Arch after TBC": "Дуга аорты после отхождения плечеголовного ствола",   # Исправлен ключ под ваш JSON
+    "Ascending Aorta befor TBC": "Восходящая аорта перед плечеголовным стволом", # Исправлен ключ
+    "Ascending Aorta": "Восходящая аорта",
+    "max_diam_1": "Максимальные диаметры",
+    "max_diam_2": "Максимальные диаметры",
+    "min_diam": "Минимальный диаметр",
+    "perimetr": "Периметр сосуда",
+    "area": "Площадь поперечного сечения"
+}
+
 def retrieve_text_context(state: MedGraphState) -> MedGraphState:
     warnings = list(state.get("warnings", []))
     paths = state.get("guideline_paths", [])

@@ -1,4 +1,3 @@
-#pip install rank-bm25
 import os
 from pathlib import Path
 from typing import TypedDict, List, Dict, Any, Optional
@@ -13,9 +12,23 @@ from pypdf import PdfReader
 from sentence_transformers import SentenceTransformer, models, CrossEncoder
 import json 
 import pymorphy3
+import faiss
 
 import pickle
 from rank_bm25 import BM25Okapi
+
+import time
+from functools import wraps
+
+def track_node_time(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        start = time.perf_counter()
+        result = func(*args, **kwargs)
+        elapsed = time.perf_counter() - start
+        print(f"[{func.__name__}] Выполнено за {elapsed:.3f} сек.")
+        return result
+    return wrapper
 
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 load_dotenv()
@@ -24,14 +37,14 @@ VLLM_BASE_URL = os.getenv("VLLM_BASE_URL", "http://localhost:8000/v1")
 VLLM_API_KEY = os.getenv("VLLM_API_KEY", "token-abc123")
 VLLM_MODEL = os.getenv("VLLM_MODEL", "Qwen/Qwen2.5-0.5B-Instruct")
 
-EMBEDDING_MODEL_NAME = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
-CROSS_ENCODER_MODEL_NAME = "cross-encoder/ms-marco-MiniLM-L12-v2"
+EMBEDDING_MODEL_NAME = "DmitryPogrebnoy/MedRuBertTiny2" #"sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+CROSS_ENCODER_MODEL_NAME = "DmitryPogrebnoy/MedRuBertTiny2" #"cross-encoder/ms-marco-MiniLM-L12-v2"
 CROSS_ENCODER = CrossEncoder(CROSS_ENCODER_MODEL_NAME, device="cpu")
 
 CHUNK_SIZE = 700
 CHUNK_OVERLAP = 100
 TOP_K = 4
-MIN_RELEVANCE_SCORE = 0.20
+MIN_RELEVANCE_SCORE = 0.0 #0.20
 
 KB_DISK_CACHE_DIR = Path(".kb_cache")
 KB_DISK_CACHE_DIR.mkdir(exist_ok=True)
@@ -41,18 +54,13 @@ KB_BM25_DISK_CACHE_DIR.mkdir(exist_ok=True)
 
 word_embedding_model = models.Transformer(EMBEDDING_MODEL_NAME)
 
-pooling_model = models.Pooling(
-        word_embedding_model.get_word_embedding_dimension(),
-        pooling_mode_mean_tokens=True,
-        pooling_mode_cls_token=False,
-        pooling_mode_max_tokens=False,
-)
+pooling_model = models.Pooling(word_embedding_model.get_word_embedding_dimension(), pooling_mode_mean_tokens=True,
+                                pooling_mode_cls_token=False, pooling_mode_max_tokens=False)
 
 EMBEDDER = SentenceTransformer(modules=[word_embedding_model, pooling_model], device="cpu")
 KB_CACHE: Dict[str, Dict[str, Any]] = {}
 
-
-with open(f"content/0.json", "r", encoding="utf-8") as f:
+with open(f"dataset/0.json", "r", encoding="utf-8") as f:
     patient_data = json.load(f)
 
 
@@ -61,7 +69,7 @@ class MedGraphState(TypedDict, total=False):
     patient_history: str
     guideline_paths: List[str]
     persist_dir: str
-    patient_data = str
+    patient_data: str
 
     warnings: List[str]
     errors: List[str]
@@ -81,33 +89,35 @@ def get_cache_prefix(folder_path: str, use_bm25: bool = False) -> Path:
     safe_name = Path(folder_path).name.replace(" ", "_")
     return base_dir / safe_name
 
+
 def save_kb_to_disk(folder_path: str, kb: Dict[str, Any], use_bm25: bool = False) -> None:
     prefix = get_cache_prefix(folder_path, use_bm25)
     prefix.parent.mkdir(parents=True, exist_ok=True)
     with open(f"{prefix}_chunks.json", "w", encoding="utf-8") as f:
         json.dump(kb["chunks"], f, ensure_ascii=False, indent=2)
-            
-    np.save(f"{prefix}_embeddings.npy", kb["embeddings"])
-    
+
+    if kb.get("faiss_index"):
+        faiss.write_index(kb["faiss_index"], f"{prefix}_faiss.index")
+
     if use_bm25 and "bm25_corpus" in kb:
         with open(f"{prefix}_bm25_corpus.pkl", "wb") as f:
             pickle.dump(kb["bm25_corpus"], f)
 
+#for vector base
 def load_kb_from_disk(folder_path: str, use_bm25: bool = False) -> Optional[Dict[str, Any]]:
     prefix = get_cache_prefix(folder_path, use_bm25)
-        
     chunks_file = Path(f"{prefix}_chunks.json")
-    emb_file = Path(f"{prefix}_embeddings.npy")
-    
-    if not (chunks_file.exists() and emb_file.exists()):
+    index_file = Path(f"{prefix}_faiss.index")
+
+    if not (chunks_file.exists() and index_file.exists()):
         return None
-        
+
     with open(chunks_file, "r", encoding="utf-8") as f:
         chunks = json.load(f)
-            
-    embeddings = np.load(emb_file)
-    
-    kb = {"chunks": chunks, "embeddings": embeddings}
+
+    index = faiss.read_index(str(index_file))
+
+    kb = {"chunks": chunks, "faiss_index": index, "dim": index.d}
     if use_bm25:
         corpus_file = Path(f"{prefix}_bm25_corpus.pkl")
         if corpus_file.exists():
@@ -116,6 +126,7 @@ def load_kb_from_disk(folder_path: str, use_bm25: bool = False) -> Optional[Dict
             kb["bm25_corpus"] = corpus
             kb["bm25_index"] = BM25Okapi(corpus)
     return kb
+
 
 def read_documents(folder: Path) -> List[Dict[str, Any]]:
     docs: List[Dict[str, Any]] = []
@@ -150,10 +161,48 @@ def read_documents(folder: Path) -> List[Dict[str, Any]]:
                 "text": text,
             })
 
+
     return docs
 
+def recursive_chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> List[str]:
+    separators = ["\n\n", "\n", ". ", "! ", "? ", " ", ""]
+    raw_chunks = []
+
+    def _split_recursive(current_text: str, sep_idx: int):
+        if len(current_text) <= chunk_size:
+            if current_text.strip():
+                raw_chunks.append(current_text.strip())
+            return
+
+        sep = separators[sep_idx] if sep_idx < len(separators) else ""
+        parts = current_text.split(sep) if sep else list(current_text)
+        merged = ""
+        for part in parts:
+            if len(merged) + len(sep) + len(part) > chunk_size and merged:
+                _split_recursive(merged, sep_idx + 1)
+                merged = part
+            else:
+                merged = merged + sep + part if merged else part
+        if merged:
+            _split_recursive(merged, sep_idx + 1)
+
+    _split_recursive(text.strip(), 0)
+
+    # Применяем overlap только если предыдущий чанк достаточно длинный
+    final_chunks = []
+    for i, chunk in enumerate(raw_chunks):
+        if i > 0 and len(raw_chunks[i-1]) > overlap:
+            overlap_prefix = raw_chunks[i-1][-overlap:]
+            chunk = (overlap_prefix + chunk) if overlap_prefix[-1].isalnum() else (overlap_prefix + " " + chunk)
+        final_chunks.append(chunk)
+    return final_chunks
 
 def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> List[str]:
+    # Очистка текста из PDF перед чанкингом
+    text = re.sub(r'(?<!\n)\n(?!\n)', ' ', text)  # Заменяем одиночные переносы строк на пробелы
+    text = re.sub(r'\s{2,}', ' ', text)  # Убираем множественные пробелы
+    text = re.sub(r'\n{3,}', '\n\n', text)  # Оставляем не более 2 пустых строк
+
     text = text.strip()
     if not text:
         return []
@@ -179,7 +228,7 @@ def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVE
 def build_chunks(docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     result: List[Dict[str, Any]] = []
     for doc in docs:
-        pieces = chunk_text(doc["text"])
+        pieces = recursive_chunk_text(doc["text"])
         for i, piece in enumerate(pieces):
             result.append({
                 "source": doc["source"],
@@ -196,23 +245,25 @@ def embed_texts(texts: List[str], is_query: bool = False) -> np.ndarray:
     prefix = "query: " if is_query else "passage: "
     prepared_texts = [prefix + t for t in texts]
 
-    embeddings = EMBEDDER.encode(
-        prepared_texts,
-        normalize_embeddings=True,
-        batch_size=8,
-        convert_to_numpy=True,
-        show_progress_bar=True,
-    )
+    embeddings = EMBEDDER.encode(prepared_texts, normalize_embeddings=True, batch_size=8, convert_to_numpy=True, show_progress_bar=True)
+    embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
     return embeddings.astype("float32")
+
 
 def build_kb(folder_path: str, use_bm25: bool = True) -> Dict[str, Any]:
     folder = Path(folder_path)
     docs = read_documents(folder)
     chunks = build_chunks(docs)
     texts = [c["text"] for c in chunks]
+
     embeddings = embed_texts(texts) if texts else np.empty((0, 0), dtype=np.float32)
-    
-    kb = {"docs": docs, "chunks": chunks, "embeddings": embeddings}
+    d = embeddings.shape[1] if len(embeddings) > 0 else 0
+
+    # FAISS IndexFlatIP = точный поиск по скалярному произведению == Cosine Similarity
+    index = faiss.IndexHNSWFlat(d, 32)
+    index.add(embeddings)
+
+    kb = {"docs": docs, "chunks": chunks, "faiss_index": index, "dim": d}
     if use_bm25 and texts:
         corpus = [_tokenize_bm25(t) for t in texts]
         kb["bm25_corpus"] = corpus
@@ -227,14 +278,20 @@ def _normalize_text(text: str) -> set:
 
 def hybrid_retrieve(query: str, kb: Dict[str, Any], top_k: int) -> List[Dict[str, Any]]:
     chunks = kb.get("chunks", [])
-    embeddings = kb.get("embeddings")
-    if not chunks or embeddings is None or len(chunks) == 0:
+    if "faiss_index" not in kb or not kb["chunks"]:
         return []
             
-    #Cosine Similarity
+    # #Cosine Similarity for numpy
+    # q_emb = embed_texts([query], is_query=True)
+    # cos_scores = np.dot(embeddings, q_emb[0])
+    # cos_ranks = np.argsort(cos_scores)[::-1]
+
+    # Cosine Similarity через FAISS
     q_emb = embed_texts([query], is_query=True)
-    cos_scores = np.dot(embeddings, q_emb[0])
-    cos_ranks = np.argsort(cos_scores)[::-1]
+    k_search = max(len(kb["chunks"]), top_k * 3)
+    D, I = kb["faiss_index"].search(q_emb, k_search)
+    cos_scores = D[0]  # Scores (shape: k_search,)
+    cos_ranks = I[0]  # Indices (shape: k_search,)
         
     #BM25
     bm25_ranks = None
@@ -303,113 +360,8 @@ def _apply_json_heuristics(candidates: List[Dict[str, Any]], keywords_from_json:
             c["score"] -= len(reference_matches) * 0.005
     return candidates
 
-# def retrieve_top_k(query: str, kb: Dict[str, Any], json_data: Optional[Dict] = None, use_hybrid_search: bool = True, use_cross_encoding: bool = True,
-#     top_k: int = TOP_K, min_score: float = MIN_RELEVANCE_SCORE) -> Dict[str, Any]:   
-#     enriched_query = str(query)
-#     keywords_from_json = set()
-#     if json_data:
-#         translated_list = []
-#         for key in json_data.keys():
-#             clean_key = key.strip()
-#             russian_term = TRANSLATION_MAP.get(clean_key)
-#             if russian_term:
-#                 translated_list.append(russian_term)
-#                 keywords_from_json.update(_normalize_text(russian_term))
-        
-#         zones_str = " ".join(translated_list)
-#         enriched_query += f" {zones_str} Максимальные диаметры, Минимальный диаметр, Периметр сосуда, Площадь поперечного сечения, норма диаметр классификация показатели мм превышать"
-        
-#         raw_keywords = _extract_keywords_from_json(json_data)
-#         for kw in raw_keywords:
-#             keywords_from_json.update(_normalize_text(kw))
 
-#     chunks = kb.get("chunks", [])
-#     embeddings = kb.get("embeddings")
-#     if not chunks or embeddings is None or len(chunks) == 0:
-#         return {"chunks": [], "sources": []}
-
-#     #Cosine Similarity (Dense Retrieval)
-#     query_embedding = embed_texts([enriched_query], is_query=True)
-#     cos_scores = np.dot(embeddings, query_embedding[0])
-#     cos_ranks = np.argsort(cos_scores)[::-1]
-
-#     #BM25 Score (Lexical Retrieval)
-#     bm25_scores, bm25_ranks = None, None
-#     if use_hybrid_search and kb.get("bm25_index"):
-#         query_tokens = _tokenize_bm25(enriched_query)
-#         bm25_scores = kb["bm25_index"].get_scores(query_tokens)
-#         bm25_ranks = np.argsort(bm25_scores)[::-1]
-
-#     #RRF Fusion (Reciprocal Rank Fusion)
-#     rrf_scores = np.zeros(len(chunks))
-#     K_RRF = 60.0
-#     def apply_rrf(ranks: np.ndarray, target: np.ndarray):
-#         for rank, idx in enumerate(ranks, start=1):
-#             target[idx] += 1.0 / (K_RRF + rank)
-
-#     apply_rrf(cos_ranks, rrf_scores)
-#     if use_hybrid_search and bm25_ranks is not None:
-#         apply_rrf(bm25_ranks, rrf_scores)
-
-#     #Кандидаты для кросс-энкодинга (топ * 3)
-#     candidate_indices = np.argsort(rrf_scores)[::-1][:(top_k * 3)]
-#     preliminary_results = []
-#     for idx in candidate_indices:
-#         idx = int(idx)
-#         preliminary_results.append({
-#             "source": chunks[idx]["source"], "chunk_id": chunks[idx]["chunk_id"],
-#             "text": chunks[idx]["text"], "index": idx, "rrf_score": float(rrf_scores[idx])
-#         })
-
-#     #Cross-Encoder Reranking
-#     if use_cross_encoding and preliminary_results:
-#         pairs = [[enriched_query, item["text"]] for item in preliminary_results]
-#         ce_scores = CROSS_ENCODER.predict(pairs, show_progress_bar=False)
-#         for i, item in enumerate(preliminary_results):
-#             item["final_score"] = 0.3 * item["rrf_score"] + 0.7 * float(ce_scores[i])
-#             item["score"] = item["final_score"]
-#     else:
-#         for item in preliminary_results:
-#             item["final_score"] = item["rrf_score"]
-#             item["score"] = item["final_score"]
-
-#      for item in preliminary_results:
-#           text_lower = item["text"].lower()
-#           text_normalized = _normalize_text(item["text"])
-
-#          # А) Бонус за совпадение терминов из JSON
-#             matches = keywords_from_json.intersection(text_normalized)
-#             item["score"] += len(matches) * 0.05
-
-#          # Б) Бонус за числовые нормативы
-#             numeric_patterns = [
-#              r'\d{1,2}(\.\d)?\s?мм', 
-#              r'[><=]\s?\d{1,2}', 
-#              r'от\s\d{1,2}\sдо\s\d{1,2}'
-#          ]
-#             if any(re.search(p, text_lower) for p in numeric_patterns):
-#              item["score"] += 0.2
-
-#          # В) Штраф за описание изображений
-#             stop_patterns = ["рис.", "рисунок", "вид сбоку", "снимок", "визуализация", "иллюстрация", "график"]
-#             if any(stop in text_lower for stop in stop_patterns):
-#              item["score"] -= 0.15
-
-#          # Г) Штраф за ссылки на литературу
-#             reference_matches = re.findall(r'\[[\d,\s\-]+\]', text_lower)
-#             item["score"] -= len(reference_matches) * 0.005
-
-#     final_chunks = [c for c in preliminary_results if c["final_score"] >= min_score]
-#     final_chunks.sort(key=lambda x: x["final_score"], reverse=True)
-#     selected = final_chunks[:top_k]
-            
-#     return {
-#         "chunks": selected,
-#         "sources": list(set(c["source"] for c in selected))
-#     }
-
-# Узлы графа
-
+@track_node_time
 def ingest_request(state: MedGraphState) -> MedGraphState:
     errors = list(state.get("errors", []))
     warnings = list(state.get("warnings", []))
@@ -426,6 +378,7 @@ def ingest_request(state: MedGraphState) -> MedGraphState:
         "warnings": warnings,
     }
 
+@track_node_time
 def initialize_kb(state: MedGraphState) -> MedGraphState:
     warnings = list(state.get("warnings", []))
     errors = list(state.get("errors", []))
@@ -467,9 +420,9 @@ def initialize_kb(state: MedGraphState) -> MedGraphState:
 TRANSLATION_MAP = {
     "Descending Aorta": "Нисходящая аорта",
     "Isthmus": "Перешеек аорты",
-    "Arch after LSA": "Дуга аорты после отхождения левой подвключичной артерии", # Исправлен ключ под ваш JSON
-    "Arch after TBC": "Дуга аорты после отхождения плечеголовного ствола",   # Исправлен ключ под ваш JSON
-    "Ascending Aorta befor TBC": "Восходящая аорта перед плечеголовным стволом", # Исправлен ключ
+    "Arch after LSA": "Дуга аорты после отхождения левой подвключичной артерии",
+    "Arch after TBC": "Дуга аорты после отхождения плечеголовного ствола",
+    "Ascending Aorta befor TBC": "Восходящая аорта перед плечеголовным стволом",
     "Ascending Aorta": "Восходящая аорта",
     "max_diam_1": "Максимальные диаметры",
     "max_diam_2": "Максимальные диаметры",
@@ -478,6 +431,7 @@ TRANSLATION_MAP = {
     "area": "Площадь поперечного сечения"
 }
 
+@track_node_time
 def retrieve_text_context(state: MedGraphState) -> MedGraphState:
     warnings = list(state.get("warnings", []))
     paths = state.get("guideline_paths", [])
@@ -491,8 +445,12 @@ def retrieve_text_context(state: MedGraphState) -> MedGraphState:
 
     patient_data = state.get("patient_data", {})
     
-    symptom_query = f"{state.get('query', '')}\n{state.get('patient_history', '')}".strip()
-    symptom_results = hybrid_retrieve(symptom_query, kb, top_k=2)
+    symptom_query = (
+        f"{state.get('query', '')}\n"
+        f"{state.get('patient_history', '')}\n"
+        "клинические рекомендации тактика ведения показания противопоказания диагностика лечение классификация"
+    ).strip()
+    symptom_results = hybrid_retrieve(symptom_query, kb, top_k=3)
 
     json_query = ""
     keywords_from_json = set()
@@ -511,7 +469,7 @@ def retrieve_text_context(state: MedGraphState) -> MedGraphState:
     json_candidates = _apply_json_heuristics(json_candidates, keywords_from_json)
     json_candidates = [c for c in json_candidates if c["score"] >= MIN_RELEVANCE_SCORE]
     json_candidates.sort(key=lambda x: x["score"], reverse=True)
-    json_results = json_candidates[:3]
+    json_results = json_candidates[:2]
 
     seen = set()
     merged_results = []
@@ -522,36 +480,38 @@ def retrieve_text_context(state: MedGraphState) -> MedGraphState:
             merged_results.append(item)
 
     merged_results.sort(key=lambda x: x["score"], reverse=True)
-    final_guidelines = merged_results[:5]  # Гарантируем максимум 2+3 = 5
+    final_guidelines = merged_results[:5]  # Гарантируем максимум 3+2 = 5
 
     if not final_guidelines:
         warnings.append("Ретривер не нашёл релевантных фрагментов")
 
     return {**state, "retrieved_guidelines": final_guidelines, "warnings": warnings}
 
+
+@track_node_time
 def fuse_context(state: MedGraphState) -> MedGraphState:
     blocks = []
 
     for i, item in enumerate(state.get("retrieved_guidelines", []), start=1):
+        score = item.get("score", item.get("final_score", 0.0))
         blocks.append(
             f"[GUIDELINE {i}]\n"
             f"Источник: {item['source']}\n"
             f"Chunk: {item['chunk_id']}\n"
-            f"Score: {item['final_score']:.4f}\n"
-            f"Текст: {item['text']}"
-        )
+            f"Score: {score:.4f}\n"
+            f"Текст: {item['text']}")
 
     fused_context = (
-        f"Жалобы:\n{state.get('query', '')}\n\n"
-        f"Анамнез:\n{state.get('patient_history', '')}\n\n"
-        f"Контекст из гайдлайнов:\n"
-        + ("\n\n".join(blocks) if blocks else "Ничего не найдено")
-    )
+            f"Жалобы:\n{state.get('query', '')}\n\n"
+            f"Анамнез:\n{state.get('patient_history', '')}\n\n"
+            f"Контекст из гайдлайнов:\n"
+            + ("\n\n".join(blocks) if blocks else "Ничего не найдено"))
 
     return {
         **state,
         "fused_context": fused_context,
     }
+
 
 def format_patient_data(patient_data: Dict[str, Any]) -> str:
     if not patient_data:
@@ -560,6 +520,7 @@ def format_patient_data(patient_data: Dict[str, Any]) -> str:
     
 patient_data_text = format_patient_data(patient_data)
 
+@track_node_time
 def build_prompt(state: MedGraphState) -> MedGraphState:
     prompt = f"""
 Вы — врач-кардиохирург, эксперт в области кардиологии и сосудистой хирургии с 50-летним опытом. Ваша специализация: анализ КТ-ангиографии аорты, оценка аневризм, диссекций и стенозирующих поражений.
@@ -592,7 +553,7 @@ def build_prompt(state: MedGraphState) -> MedGraphState:
     }
 
 
-
+@track_node_time
 def call_local_llm(state: MedGraphState) -> MedGraphState:
     retrieved = state.get("retrieved_guidelines", [])
     if not retrieved:
@@ -601,12 +562,7 @@ def call_local_llm(state: MedGraphState) -> MedGraphState:
             "raw_llm_output": "Релевантные клинические рекомендации не найдены. Недостаточно данных для анализа.",
         }
 
-    llm = ChatOpenAI(
-        model=VLLM_MODEL,
-        base_url=VLLM_BASE_URL,
-        api_key=VLLM_API_KEY,
-        temperature=0.0,
-    )
+    llm = ChatOpenAI(model=VLLM_MODEL, base_url=VLLM_BASE_URL, api_key=VLLM_API_KEY, temperature=0.0)
 
     response = llm.invoke(state.get("final_prompt", ""))
     answer = response.content if hasattr(response, "content") else str(response)
@@ -615,7 +571,6 @@ def call_local_llm(state: MedGraphState) -> MedGraphState:
         **state,
         "raw_llm_output": answer,
     }
-
 
 
 def build_graph():
@@ -677,4 +632,3 @@ if __name__ == "__main__":
 
     print("\n=== ANSWER ===")
     print(result.get("raw_llm_output", ""))
-

@@ -4,6 +4,16 @@ from fastapi import FastAPI
 from app.api.v1 import users
 from app.api.v1 import reports
 from app.api.v1 import llm
+from contextlib import asynccontextmanager
+from app.core.database import engine, Base
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield
+    await engine.dispose()
+
 
 from app.core.database import engine
 from app.services.bootstrap_service import bootstrap

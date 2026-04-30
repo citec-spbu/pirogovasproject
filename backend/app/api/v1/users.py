@@ -12,11 +12,12 @@ async def login(user_data: UserLogin, db: AsyncSession = Depends(get_db)):
     try:
         user = await user_service.login_user(db, user_data)
 
-        if not user.is_active:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not active")
-
-        data_for_token = {"sub": user.login, "role": user.role.value, "organization_id": user.organization_id}
-        jwt_token = create_access_token(data_for_token)
-        return { "access_token": jwt_token, "token_type": "bearer" }
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e), headers={"WWW-Authenticate": "Bearer"})
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid login or password", headers={"WWW-Authenticate": "Bearer"})
+
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not active")
+
+    data_for_token = {"sub": user.login, "role": user.role.value, "organization_id": user.organization_id}
+    jwt_token = create_access_token(data_for_token)
+    return { "access_token": jwt_token, "token_type": "bearer" }

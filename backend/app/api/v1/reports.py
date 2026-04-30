@@ -6,7 +6,7 @@ from app.core.database import get_db
 
 router = APIRouter(prefix="reports", tags=["reports"])
 
-@router.get("get_id_reports", response_model=ReportsListResponse)
+@router.get("/get_id_reports", response_model=ReportsListResponse)
 async def get_id_reports(login: str = Query(...), db: AsyncSession = Depends(get_db)):
     try:
         reports = await report_service.get_reports_by_login(db, login)

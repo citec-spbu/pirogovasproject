@@ -38,12 +38,10 @@ async def create_user(db: AsyncSession, user_data: AdminCreateUser) -> User:
         date_of_birth=user_data.date_of_birth
     )
 
-    user_out = AdminUserOut(new_user)
-
     db.add(new_user)
     await db.commit()
     await db.refresh(new_user)
-    return user_out
+    return new_user
 
 async def update_user(db: AsyncSession, user_id: int, user_data: AdminUpdateUser):
     result = await db.execute(select(User).where(User.id == user_id))
@@ -76,12 +74,10 @@ async def update_user(db: AsyncSession, user_id: int, user_data: AdminUpdateUser
 
     for key, value in update_dict.items():
         setattr(user, key, value)
-
-    user_out = AdminUserOut(user)
     
     await db.commit()
     await db.refresh(user)
 
-    return user_out
+    return user
     
     

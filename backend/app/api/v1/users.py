@@ -10,8 +10,12 @@ router = APIRouter(prefix="/users", tags=["users"])
 @router.post("/login", status_code=status.HTTP_200_OK)
 async def login(user_data: UserLogin, db: AsyncSession = Depends(get_db)):
     try:
-        await user_service.login_user(db, user_data)
-        data_for_token = {"sub": user_data.login, "role": user_data.role, "organization_id": user_data.organization_id}
+        user = await user_service.login_user(db, user_data)
+
+        if not user.is_active:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not active")
+
+        data_for_token = {"sub": user.login, "role": user.role.value, "organization_id": user.organization_id}
         jwt_token = create_access_token(data_for_token)
         return { "access_token": jwt_token, "token_type": "bearer" }
     except Exception as e:

@@ -3,7 +3,8 @@ pydantic
 pydantic_settings
 datetime
 fastapi
-passlib
+passlib[bcrypt]
 asyncpg
 uvicorn
 python-multipart
+python-jose[cryptography]

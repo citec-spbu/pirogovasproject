@@ -31,16 +31,17 @@ async def bootstrap_first_admin(db: AsyncSession) -> None:
         )
         db.add(organization)
         await db.commit()
+        await db.refresh(organization)
 
     first_admin = User(
         login=get_settings().FIRST_ADMIN_LOGIN,
         hashed_password=get_password_hash(get_settings().FIRST_ADMIN_PASSWORD),
         role=UserRole.ADMIN,
         organization_id=organization.id,
-        name = get_settings().FIRST_ADMIN_NAME
-        surname = get_settings().FIRST_ADMIN_SURNAME
-        patronymic = get_settings().FIRST_ADMIN_PATRONYMIC
-        date_of_birth = get_settings().FIRST_ADMIN_DATE_OF_BIRTH
+        name = get_settings().FIRST_ADMIN_NAME,
+        surname = get_settings().FIRST_ADMIN_SURNAME,
+        patronymic = get_settings().FIRST_ADMIN_PATRONYMIC,
+        date_of_birth = get_settings().FIRST_ADMIN_DATE_OF_BIRTH,
         is_active = True
     )
 

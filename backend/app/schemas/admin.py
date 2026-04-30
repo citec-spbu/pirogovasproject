@@ -1,6 +1,6 @@
 from pydantic import BaseModel,ConfigDict
 from datetime import date
-from backend.app.core.role import UserRole
+from app.core.role import UserRole
 
 class AdminCreateUser(BaseModel):
     login: str

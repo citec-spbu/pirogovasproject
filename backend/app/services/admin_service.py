@@ -6,8 +6,7 @@ from sqlalchemy import select
 from app.models.user import User, Organization
 from app.schemas.admin import AdminCreateUser, AdminUserOut, AdminUpdateUser
 from app.core.security import get_password_hash, verify_password
-from app.core.role import Role
-from backend.app.schemas import user
+from app.core.role import UserRole
 
 async def create_user(db: AsyncSession, user_data: AdminCreateUser) -> User:
     result = await db.execute(select(User).where(User.login == user_data.login))
@@ -39,7 +38,7 @@ async def create_user(db: AsyncSession, user_data: AdminCreateUser) -> User:
         date_of_birth=user_data.date_of_birth
     )
 
-    user_out = AdminUserOut(user)
+    user_out = AdminUserOut(new_user)
 
     db.add(new_user)
     await db.commit()
@@ -64,8 +63,8 @@ async def update_user(db: AsyncSession, user_id: int, user_data: AdminUpdateUser
                 detail="Organization not found"
             )
     
-    if user_data.role == Role.USER and user.role == Role.ADMIN or user_data.is_active == False and user.role == Role.ADMIN:
-        admins = await db.execute(select(User).where(User.role == Role.ADMIN))
+    if user_data.role == UserRole.USER and user.role == UserRole.ADMIN or user_data.is_active == False and user.role == UserRole.ADMIN:
+        admins = await db.execute(select(User).where(User.role == UserRole.ADMIN))
         admins = admins.scalars().all()
         if len(admins) == 1:
             raise HTTPException(

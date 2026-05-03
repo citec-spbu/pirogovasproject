@@ -39,6 +39,9 @@ VLLM_MODEL = os.getenv("VLLM_MODEL", "Qwen/Qwen2.5-0.5B-Instruct")
 
 EMBEDDING_MODEL_NAME = "DmitryPogrebnoy/MedRuBertTiny2" #"sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
 CROSS_ENCODER_MODEL_NAME = "DmitryPogrebnoy/MedRuBertTiny2" #"cross-encoder/ms-marco-MiniLM-L12-v2"
+EMBEDDING_MODEL_NAME = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+CROSS_ENCODER_MODEL_NAME = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+>>>>>>> 04e8a49 (чищу мейн)
 CROSS_ENCODER = CrossEncoder(CROSS_ENCODER_MODEL_NAME, device="cpu")
 
 CHUNK_SIZE = 700
@@ -432,16 +435,104 @@ TRANSLATION_MAP = {
 }
 
 @track_node_time
+def _flatten_patient_measurements(patient_data: Dict[str, Any]) -> List[str]:
+    """
+    Превращает JSON пациента в плоский список фраз для retrieval.
+    Пример:
+    'Восходящая аорта максимальный диаметр 39.44 мм'
+    """
+    facts: List[str] = []
+
+    if not isinstance(patient_data, dict):
+        return facts
+
+    for zone_key, zone_value in patient_data.items():
+        zone_name = TRANSLATION_MAP.get(zone_key, zone_key)
+
+        # если сегмент — вложенный dict с измерениями
+        if isinstance(zone_value, dict):
+            for metric_key, metric_value in zone_value.items():
+                metric_name = TRANSLATION_MAP.get(metric_key, metric_key)
+
+                if isinstance(metric_value, (int, float)):
+                    facts.append(f"{zone_name} {metric_name} {metric_value} мм")
+                elif isinstance(metric_value, list):
+                    numeric_values = [str(v) for v in metric_value if isinstance(v, (int, float))]
+                    if numeric_values:
+                        facts.append(f"{zone_name} {metric_name} {' '.join(numeric_values)} мм")
+                elif isinstance(metric_value, dict):
+                    for sub_key, sub_val in metric_value.items():
+                        sub_name = TRANSLATION_MAP.get(sub_key, sub_key)
+                        if isinstance(sub_val, (int, float)):
+                            facts.append(f"{zone_name} {metric_name} {sub_name} {sub_val} мм")
+                        elif isinstance(sub_val, list):
+                            numeric_values = [str(v) for v in sub_val if isinstance(v, (int, float))]
+                            if numeric_values:
+                                facts.append(f"{zone_name} {metric_name} {sub_name} {' '.join(numeric_values)} мм")
+
+        # если значение сразу число
+        elif isinstance(zone_value, (int, float)):
+            facts.append(f"{zone_name} {zone_value} мм")
+
+    return facts
+
+
+def _collect_json_keywords(patient_data: Dict[str, Any]) -> set:
+    """
+    Собирает лемматизированные ключевые слова из названий зон и числовых меток.
+    """
+    keywords = set()
+
+    if not isinstance(patient_data, dict):
+        return keywords
+
+    for zone_key, zone_value in patient_data.items():
+        zone_name = TRANSLATION_MAP.get(zone_key, zone_key)
+        keywords.update(_normalize_text(zone_name))
+
+        if isinstance(zone_value, dict):
+            for metric_key in zone_value.keys():
+                metric_name = TRANSLATION_MAP.get(metric_key, metric_key)
+                keywords.update(_normalize_text(metric_name))
+
+    return keywords
+
+
+def _build_json_query(patient_data: Dict[str, Any]) -> str:
+    """
+    Строит retrieval-запрос не только из названий сегментов,
+    но и из конкретных численных значений пациента.
+    """
+    facts = _flatten_patient_measurements(patient_data)
+
+    base_terms = (
+        "норма аорты нормальный диаметр аневризма расширение "
+        "порог вмешательства показания к операции риск расслоения "
+        "восходящая аорта нисходящая аорта дуга аорты перешеек "
+        "максимальный диаметр минимальный диаметр периметр площадь поперечного сечения "
+        "мм см таблица рекомендации"
+    )
+
+    return f"{base_terms} {' '.join(facts)}".strip()
+
 def retrieve_text_context(state: MedGraphState) -> MedGraphState:
     warnings = list(state.get("warnings", []))
     paths = state.get("guideline_paths", [])
     if not paths:
-        return {**state, "retrieved_guidelines": [], "warnings": warnings + ["Не переданы пути к гайдлайнам"]}
+        return {
+            **state,
+            "retrieved_guidelines": [],
+            "warnings": warnings + ["Не переданы пути к гайдлайнам"]
+        }
 
     docs_path = paths[0]
     kb = KB_CACHE.get(docs_path)
     if kb is None:
-        return {**state, "retrieved_guidelines": [], "warnings": warnings + ["KB не инициализирована"]}
+        return {
+            **state,
+            "retrieved_guidelines": [],
+            "warnings": warnings + ["KB не инициализирована"]
+        }
 
     patient_data = state.get("patient_data", {})
     
@@ -452,25 +543,49 @@ def retrieve_text_context(state: MedGraphState) -> MedGraphState:
     ).strip()
     symptom_results = hybrid_retrieve(symptom_query, kb, top_k=3)
 
+    # 1. Симптомный запрос оставляем
+    symptom_query = f"{state.get('query', '')}\n{state.get('patient_history', '')}".strip()
+    symptom_results = hybrid_retrieve(symptom_query, kb, top_k=3)
+
+    # 2. Новый JSON-запрос: с числами пациента
     json_query = ""
     keywords_from_json = set()
-    if patient_data and isinstance(patient_data, dict):
-        translated_list = []
-        for key in patient_data.keys():
-            clean_key = key.strip()
-            russian_term = TRANSLATION_MAP.get(clean_key) if 'TRANSLATION_MAP' in globals() else None
-            if russian_term:
-                translated_list.append(russian_term)
-                keywords_from_json.update(_normalize_text(russian_term))
-        zones_str = " ".join(translated_list)
-        json_query += f" {zones_str} Максимальные диаметры, Минимальный диаметр, Периметр сосуда, Площадь поперечного сечения, норма диаметр классификация показатели мм превышать"
 
-    json_candidates = hybrid_retrieve(json_query, kb, top_k=10)
+    if patient_data and isinstance(patient_data, dict):
+        json_query = _build_json_query(patient_data)
+        keywords_from_json = _collect_json_keywords(patient_data)
+
+    # 3. Берём больше кандидатов, иначе нужные нормы не попадут в rerank
+    json_candidates = hybrid_retrieve(json_query, kb, top_k=20) if json_query else []
+
+    # 4. Усиливаем нормативные куски
     json_candidates = _apply_json_heuristics(json_candidates, keywords_from_json)
+
+    for c in json_candidates:
+        chunk_lower = c["text"].lower()
+
+        # бонус за слова про норму/порог/аневризму
+        if any(term in chunk_lower for term in [
+            "норма", "нормаль", "аневризм", "порог", "рекомендуется",
+            "диаметр", "расслоени", "разрыв", "вмешательств", "таблица"
+        ]):
+            c["score"] += 0.20
+
+        # бонус за явные пороги в мм/см
+        if re.search(r'(>=|≤|≥|>|<)\s?\d+[.,]?\d*\s?(мм|см)', chunk_lower):
+            c["score"] += 0.25
+
+        # бонус за диапазоны / табличные нормы
+        if re.search(r'\d+[.,]?\d*\s?(мм|см)', chunk_lower):
+            c["score"] += 0.10
+
     json_candidates = [c for c in json_candidates if c["score"] >= MIN_RELEVANCE_SCORE]
     json_candidates.sort(key=lambda x: x["score"], reverse=True)
     json_results = json_candidates[:2]
+    # 5. Берём больше нормативных кусков
+    json_results = json_candidates[:5]
 
+    # 6. Склеиваем и убираем дубли
     seen = set()
     merged_results = []
     for item in symptom_results + json_results:
@@ -481,9 +596,16 @@ def retrieve_text_context(state: MedGraphState) -> MedGraphState:
 
     merged_results.sort(key=lambda x: x["score"], reverse=True)
     final_guidelines = merged_results[:5]  # Гарантируем максимум 3+2 = 5
+    final_guidelines = merged_results[:6]
 
     if not final_guidelines:
         warnings.append("Ретривер не нашёл релевантных фрагментов")
+
+    return {
+        **state,
+        "retrieved_guidelines": final_guidelines,
+        "warnings": warnings
+    }
 
     return {**state, "retrieved_guidelines": final_guidelines, "warnings": warnings}
 
@@ -500,6 +622,9 @@ def fuse_context(state: MedGraphState) -> MedGraphState:
             f"Chunk: {item['chunk_id']}\n"
             f"Score: {score:.4f}\n"
             f"Текст: {item['text']}")
+            f"Score: {item['score']:.4f}\n"
+            f"Текст: {item['text']}"
+        )
 
     fused_context = (
             f"Жалобы:\n{state.get('query', '')}\n\n"

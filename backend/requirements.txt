@@ -1,0 +1,11 @@
+sqlalchemy
+pydantic
+pydantic_settings
+datetime
+fastapi
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+asyncpg
+uvicorn
+python-multipart
+python-jose[cryptography]

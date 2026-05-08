@@ -141,18 +141,28 @@ pirogovasproject/
 │       │   ├── config.py             # Настройки из .env
 │       │   ├── database.py           # Async SQLAlchemy engine и сессии
 │       │   ├── role.py               # Роли пользователей
-│       │   └── security.py           # JWT и пароли
+│       │   |── security.py           # JWT и пароли
+│       │   └── rag/                  
+│       │       ├── chunker.py        # функции чанкования текста
+│       │       ├── embedder.py       # эмбеддинг-кодирование
+│       │       ├── vector_store.py   # организация векторного хранилища
+│       │       ├── bm25_index.py     # индекс bm25 (опционален для подключения)
+│       │       ├── graph_builder.py  # построение графа знаний
+│       │       ├── retriever.py      # гибридный поиск и графовый rag
+│       │       └── kb_manager.py     # управление базой знаний
 │       ├── models/
 │       │   ├── report.py             # SQLAlchemy-модель отчета
 │       │   └── user.py               # SQLAlchemy-модели пользователя и организации
 │       ├── schemas/
 │       │   ├── admin.py              # Pydantic-схемы администратора
 │       │   ├── report.py             # Pydantic-схемы отчетов
+│       │   ├── llm.py                       # схема для получения ответа и отправления запроса
 │       │   └── user.py               # Pydantic-схемы авторизации
 │       ├── services/
 │       │   ├── admin_service.py      # Бизнес-логика администратора
 │       │   ├── bootstrap_service.py  # Первичная инициализация данных
-│       │   ├── llm_service.py        # Заглушка LLM-интеграции
+│       │   ├── llm_service.py        # Заглушка LLM интеграции
+│       │   ├── ml_engine.py          # отправление запроса к LLM и подтаскивание контекста
 │       │   ├── report_service.py     # Бизнес-логика отчетов
 │       │   └── user_service.py       # Бизнес-логика пользователей
 │       └── utils/

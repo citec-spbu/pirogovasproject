@@ -1,6 +1,6 @@
 from fastapi import APIRouter, File, UploadFile, Depends, HTTPException, status, Form
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.schemas.report import ReportIdResponse
+from app.schemas.report import ReportIdResponse, ReportCreateResponse
 from app.services import llm_service, report_service
 from app.core.database import get_db
 from app.utils import file_handler
@@ -9,7 +9,7 @@ from typing import Optional
 
 router = APIRouter(prefix="/llm", tags=["llm"])
 
-@router.post("/create_report", response_model=ReportIdResponse)
+@router.post("/create_report", response_model=ReportCreateResponse)
 async def create_report(
         # metadata
         patient_name: str = Form(..., description="Patient full name"),
@@ -40,8 +40,20 @@ async def create_report(
 
         llm_response, trace_data = await llm_service.process_llm_request(patient_data=measurements_dict, medical_text=medical_text)
 
+        # Capture warnings/errors from llm_response
+        trace_data.update({
+            "warnings": llm_response.get("warnings", []),
+            "errors": llm_response.get("errors", [])
+        })
+
         id_report = await report_service.save_report(db=db, measurements=measurements_dict, photo_path=photo_path,
                                                      meta=meta, llm_response=llm_response.get("report"), trace_data=trace_data)
-        return ReportIdResponse(id=id_report)
+        return ReportCreateResponse(
+            id_report=id_report,
+            warnings=llm_response.get("warnings", []),
+            errors=llm_response.get("errors", [])
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e

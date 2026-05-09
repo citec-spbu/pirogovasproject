@@ -14,3 +14,6 @@ pymorphy3
 networkx
 faiss-cpu
 langgraph
+sentence-transformers
+pypdf
+langchain-openai

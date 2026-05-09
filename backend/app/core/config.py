@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator
 from typing import Optional
 from functools import lru_cache
 from datetime import date
@@ -44,8 +45,17 @@ class Settings(BaseSettings):
     KB_CACHE_BM25_ROOT: str = ".kb_cache_bm25"
 
     VLLM_BASE_URL: str = "http://localhost:8000/v1"
-    VLLM_API_KEY: str = "token-abc123"
+    VLLM_API_KEY: Optional[str] = None
     VLLM_MODEL: str = "Qwen/Qwen2.5-0.5B-Instruct"
+
+    @field_validator("VLLM_API_KEY")
+    @classmethod
+    def validate_vllm_api_key(cls, v: Optional[str]) -> str:
+        if v is None or not v.strip():
+            raise ValueError(
+                "VLLM_API_KEY is required but not set. Please provide it in the .env file or environment variables."
+            )
+        return v
 
     model_config = SettingsConfigDict(env_file=".env")
 

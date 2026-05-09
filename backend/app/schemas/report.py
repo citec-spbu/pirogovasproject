@@ -5,6 +5,11 @@ from typing import List, Optional
 class ReportIdResponse(BaseModel):
     id_report: str
 
+class ReportCreateResponse(BaseModel):
+    id_report: str
+    warnings: List[str] = []
+    errors: List[str] = []
+
 class ReportOut(BaseModel):
     id_report: str
     user_id: int

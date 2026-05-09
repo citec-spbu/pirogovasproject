@@ -4,10 +4,10 @@ import json
 import uuid
 import logging
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TypedDict, List, Dict, Any
+import pymorphy3
 
-from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import StateGraph, START, END
@@ -19,14 +19,41 @@ from app.core.rag.kb_manager import KBOrchestrator
 from app.core.rag.embedder import EmbeddingService
 from app.core.rag.retriever import HybridRetriever
 
-load_dotenv()
-os.environ["CUDA_VISIBLE_DEVICES"] = ""
-
 logger = logging.getLogger(__name__)
 
-kb_manager = KBOrchestrator()
-embedder = EmbeddingService()
-retriever = HybridRetriever(embedder=embedder)
+# Module-level MorphAnalyzer for reuse
+morph = pymorphy3.MorphAnalyzer()
+
+# Lazy singletons
+_kb_manager = None
+_embedder = None
+_retriever = None
+_graph = None
+
+def get_kb_orchestrator() -> KBOrchestrator:
+    global _kb_manager
+    if _kb_manager is None:
+        _kb_manager = KBOrchestrator()
+    return _kb_manager
+
+def get_embedder() -> EmbeddingService:
+    global _embedder
+    if _embedder is None:
+        _embedder = EmbeddingService()
+    return _embedder
+
+def get_retriever() -> HybridRetriever:
+    global _retriever
+    if _retriever is None:
+        embedder = get_embedder()
+        _retriever = HybridRetriever(embedder=embedder)
+    return _retriever
+
+def get_graph():
+    global _graph
+    if _graph is None:
+        _graph = build_graph()
+    return _graph
 
 VLLM_BASE_URL = settings.VLLM_BASE_URL
 VLLM_API_KEY = settings.VLLM_API_KEY
@@ -38,14 +65,17 @@ TRACE_FILE = Path("llm_traces.jsonl")
 def save_llm_trace_jsonb(prompt: str, response: str, model: str, metadata: dict) -> str:
     trace = {
         "trace_id": str(uuid.uuid4()),
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "model": model,
         "input_prompt": prompt,
         "output_response": response,
         "metadata": metadata,
     }
-    with TRACE_FILE.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(trace, ensure_ascii=False) + "\n")
+    try:
+        with TRACE_FILE.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(trace, ensure_ascii=False) + "\n")
+    except Exception as e:
+        logger.warning(f"Failed to write trace to file: {e}")
     return json.dumps(trace, ensure_ascii=False)
 
 
@@ -88,8 +118,6 @@ TRANSLATION_MAP = {
 }
 
 def _normalize_text(text: str) -> set:
-    import re, pymorphy3
-    morph = pymorphy3.MorphAnalyzer()
     words = re.findall(r'\b[а-яА-ЯёЁa-zA-Z]{3,}\b', text.lower())
     return {morph.parse(w)[0].normal_form for w in words}
 
@@ -162,7 +190,7 @@ def initialize_kb(state: MedGraphState) -> MedGraphState:
 
     docs_path = paths[0]
     try:
-        kb = kb_manager.get_kb(docs_path, use_bm25=True)
+        kb = get_kb_orchestrator().get_kb(docs_path, use_bm25=True)
         if not kb.get("chunks"):
             warnings.append("После разбиения документов не получено ни одного чанка")
         return {
@@ -188,13 +216,14 @@ def retrieve_graph_context(state: MedGraphState) -> MedGraphState:
         return {**state, "retrieved_guidelines": [], "warnings": warnings + ["Не переданы пути к гайдлайнам"]}
 
     docs_path = paths[0]
-    kb = kb_manager.load_kb(docs_path, use_bm25=True)
+    kb = get_kb_orchestrator().load_kb(docs_path, use_bm25=True)
     if not kb:
         return {**state, "retrieved_guidelines": [], "warnings": warnings + ["KB не инициализирована"]}
 
     patient_data = state.get("patient_data", {})
 
     symptom_query = f"{state.get('query', '')}\n{state.get('patient_history', '')}".strip()
+    retriever = get_retriever()
     symptom_results = retriever.hybrid_search(
         query=symptom_query,
         chunks=kb["chunks"],
@@ -207,7 +236,7 @@ def retrieve_graph_context(state: MedGraphState) -> MedGraphState:
     if patient_data and isinstance(patient_data, dict):
         json_query = _build_json_query(patient_data)
         keywords = _collect_json_keywords(patient_data)
-        json_candidates = retriever.hybrid_search(
+        json_candidates = get_retriever().hybrid_search(
             query=json_query,
             chunks=kb["chunks"],
             faiss_index=kb.get("faiss_index"),
@@ -233,10 +262,11 @@ def retrieve_graph_context(state: MedGraphState) -> MedGraphState:
             seen.add(key)
             vector_results.append(item)
 
-    graph_results = retriever.graph_expand(seed_results=vector_results, graph=kb.get("knowledge_graph"), chunks=kb["chunks"],
+    retriever_inst = get_retriever()
+    graph_results = retriever_inst.graph_expand(seed_results=vector_results, graph=kb.get("knowledge_graph"), chunks=kb["chunks"],
                                            max_hops=2, max_graph_chunks=10)
 
-    final_guidelines = retriever.merge_results(vector_results=vector_results, graph_results=graph_results, final_top_k=8)
+    final_guidelines = retriever_inst.merge_results(vector_results=vector_results, graph_results=graph_results, final_top_k=8)
     if not final_guidelines:
         warnings.append("Ретривер не нашел релевантных фрагментов")
 
@@ -341,18 +371,22 @@ def build_graph():
     builder.add_node("build_prompt", build_prompt)
     builder.add_node("call_local_llm", call_local_llm)
 
+    # Conditional routing based on errors
+    def should_continue_after_ingest(state: MedGraphState) -> str:
+        return END if state.get("errors") else "initialize_kb"
+
+    def should_continue_after_init(state: MedGraphState) -> str:
+        return END if state.get("errors") else "retrieve_graph_context"
+
     builder.add_edge(START, "ingest_request")
-    builder.add_edge("ingest_request", "initialize_kb")
-    builder.add_edge("initialize_kb", "retrieve_graph_context")
+    builder.add_conditional_edges("ingest_request", should_continue_after_ingest, {END: END, "initialize_kb": "initialize_kb"})
+    builder.add_conditional_edges("initialize_kb", should_continue_after_init, {END: END, "retrieve_graph_context": "retrieve_graph_context"})
     builder.add_edge("retrieve_graph_context", "fuse_context")
     builder.add_edge("fuse_context", "build_prompt")
     builder.add_edge("build_prompt", "call_local_llm")
     builder.add_edge("call_local_llm", END)
 
     return builder.compile(checkpointer=InMemorySaver())
-
-
-graph = build_graph()
 
 
 def generate_medical_report(query: str, patient_history: str, patient_data: dict, guideline_paths: list[str]) -> Dict[str, Any]:
@@ -367,6 +401,7 @@ def generate_medical_report(query: str, patient_history: str, patient_data: dict
     }
 
     config = {"configurable": {"thread_id": "api-request"}}
+    graph = get_graph()
     result = graph.invoke(initial_state, config=config)
 
     return {

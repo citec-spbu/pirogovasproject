@@ -58,22 +58,30 @@ class HybridRetriever:
 
         # 1. FAISS cosine similarity
         q_emb = self.embedder.encode([query], is_query=True)
-        k_search = max(len(chunks), top_k * 3)
+        k_search = min(max(len(chunks), top_k * 3), faiss_index.ntotal)
         cos_scores, cos_indices = faiss_index.search(q_emb, k_search)
         cos_scores, cos_indices = cos_scores[0], cos_indices[0]
+
+        # Filter out invalid indices from FAISS
+        valid_mask = (cos_indices >= 0) & (cos_indices < len(chunks))
+        cos_indices = cos_indices[valid_mask]
 
         # 2. BM25
         bm25_indices = None
         if bm25_index:
-            from app.core.rag.bm25_index import BM25IndexManager
-            bm25_scores = BM25IndexManager.tokenize(query)
-            bm25_scores = bm25_index.get_scores(bm25_scores)
+            from app.core.rag.bm25_index import BM25Manager
+            query_tokens = BM25Manager.tokenize(query)
+            bm25_scores = bm25_index.get_scores(query_tokens)
             bm25_indices = np.argsort(bm25_scores)[::-1]
+
+            # Filter out invalid indices from BM25
+            valid_mask = (bm25_indices >= 0) & (bm25_indices < len(chunks))
+            bm25_indices = bm25_indices[valid_mask]
 
         # 3. RRF Fusion
         rrf_scores = np.zeros(len(chunks))
         self._apply_rrf(cos_indices, rrf_scores)
-        if bm25_indices is not None:
+        if bm25_indices is not None and bm25_indices.size > 0:
             self._apply_rrf(bm25_indices, rrf_scores)
 
         candidate_indices = np.argsort(rrf_scores)[::-1][:(top_k * 3)]

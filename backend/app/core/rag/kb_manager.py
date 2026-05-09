@@ -76,7 +76,7 @@ class KBOrchestrator:
         if use_bm25 and texts:
             corpus = [BM25Manager.tokenize(t) for t in texts]
             kb["bm25_corpus"] = corpus
-            kb["bm25_index"] = self.bm25_manager.build_index(texts)
+            kb["bm25_index"] = self.bm25_manager.build_index(corpus)
 
         self._save_to_cache(folder_path, kb, use_bm25)
         return kb
@@ -123,7 +123,13 @@ class KBOrchestrator:
             corpus = self.bm25_manager.load_corpus(prefix)
             if corpus:
                 kb["bm25_corpus"] = corpus
-                kb["bm25_index"] = self.bm25_manager.build_index([BM25Manager.tokenize(t) for t in chunks])
+                kb["bm25_index"] = self.bm25_manager.build_index(corpus)
+            else:
+                # Build from chunks if cached corpus not found
+                texts = [chunk["text"] for chunk in chunks]
+                corpus = [BM25Manager.tokenize(t) for t in texts]
+                kb["bm25_corpus"] = corpus
+                kb["bm25_index"] = self.bm25_manager.build_index(corpus)
 
         self._kb_cache[folder_path] = kb
         return kb

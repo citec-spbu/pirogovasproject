@@ -161,7 +161,7 @@ pirogovasproject/
 │       ├── services/
 │       │   ├── admin_service.py      # Бизнес-логика администратора
 │       │   ├── bootstrap_service.py  # Первичная инициализация данных
-│       │   ├── llm_service.py        # Заглушка LLM интеграции
+│       │   ├── llm_service.py        # обработка запроса к LLM
 │       │   ├── ml_engine.py          # отправление запроса к LLM и подтаскивание контекста
 │       │   ├── report_service.py     # Бизнес-логика отчетов
 │       │   └── user_service.py       # Бизнес-логика пользователей

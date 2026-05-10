@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     VLLM_API_KEY: Optional[str] = None
     VLLM_MODEL: str = "Qwen/Qwen2.5-0.5B-Instruct"
 
-    @field_validator("VLLM_API_KEY", mode='after')
+    @field_validator("VLLM_API_KEY", mode='after', validate_default=True)
     @classmethod
     def validate_vllm_api_key(cls, v: Optional[str]) -> str:
         if v is None or not v.strip():

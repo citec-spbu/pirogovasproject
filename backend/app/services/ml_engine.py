@@ -6,7 +6,6 @@ import logging
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import TypedDict, List, Dict, Any
-import pymorphy3
 
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
@@ -18,18 +17,21 @@ from app.core.config import get_settings
 from app.core.rag.kb_manager import KBOrchestrator
 from app.core.rag.embedder import EmbeddingService
 from app.core.rag.retriever import HybridRetriever
+from app.core.rag.graph_builder import normalize_text
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
-# Module-level MorphAnalyzer for reuse
-morph = pymorphy3.MorphAnalyzer()
+VLLM_BASE_URL = settings.VLLM_BASE_URL
+VLLM_API_KEY = settings.VLLM_API_KEY
+VLLM_MODEL = settings.VLLM_MODEL
 
 # Lazy singletons
 _kb_manager = None
 _embedder = None
 _retriever = None
 _graph = None
+_llm_client = None
 
 def get_kb_orchestrator() -> KBOrchestrator:
     global _kb_manager
@@ -56,9 +58,18 @@ def get_graph():
         _graph = build_graph()
     return _graph
 
-VLLM_BASE_URL = settings.VLLM_BASE_URL
-VLLM_API_KEY = settings.VLLM_API_KEY
-VLLM_MODEL = settings.VLLM_MODEL
+def get_llm_client() -> ChatOpenAI:
+    global _llm_client
+    if _llm_client is None:
+        _llm_client = ChatOpenAI(
+            model=VLLM_MODEL,
+            base_url=VLLM_BASE_URL,
+            api_key=VLLM_API_KEY,
+            temperature=0.0,
+            timeout=60.0,
+            max_retries=0
+        )
+    return _llm_client
 
 TRACE_FILE = Path("llm_traces.jsonl")
 
@@ -123,11 +134,6 @@ TRANSLATION_MAP = {
     "area": "Площадь поперечного сечения"
 }
 
-def _normalize_text(text: str) -> set:
-    words = re.findall(r'\b[а-яА-ЯёЁa-zA-Z]{3,}\b', text.lower())
-    return {morph.parse(w)[0].normal_form for w in words}
-
-
 def _flatten_patient_measurements(patient_data: Dict[str, Any]) -> List[str]:
     facts: List[str] = []
     if not isinstance(patient_data, dict):
@@ -155,11 +161,11 @@ def _collect_json_keywords(patient_data: Dict[str, Any]) -> set:
         return keywords
     for zone_key, zone_value in patient_data.items():
         zone_name = TRANSLATION_MAP.get(zone_key, zone_key)
-        keywords.update(_normalize_text(zone_name))
+        keywords.update(normalize_text(zone_name))
         if isinstance(zone_value, dict):
             for metric_key in zone_value.keys():
                 metric_name = TRANSLATION_MAP.get(metric_key, metric_key)
-                keywords.update(_normalize_text(metric_name))
+                keywords.update(normalize_text(metric_name))
     return keywords
 
 
@@ -304,8 +310,8 @@ def fuse_context(state: MedGraphState) -> MedGraphState:
         clinical_data.append("Жалобы и анамнез не предоставлены.")
 
     fused_context = (
-            f"Данные пациента:\n" + "\n\n".join(clinical_data) +
-            f"Контекст из гайдлайнов:\n" + ("\n\n".join(blocks) if blocks else "Ничего не найдено")
+            "Данные пациента:\n" + "\n\n".join(clinical_data) + "\n\n" +
+            "Контекст из гайдлайнов:\n" + ("\n\n".join(blocks) if blocks else "Ничего не найдено")
     )
     return {**state, "fused_context": fused_context}
 
@@ -353,10 +359,8 @@ def call_local_llm(state: MedGraphState) -> MedGraphState:
             "raw_llm_output": "Релевантные клинические рекомендации не найдены. Недостаточно данных для анализа.",
         }
 
-    llm = ChatOpenAI(model=VLLM_MODEL, base_url=VLLM_BASE_URL, api_key=VLLM_API_KEY, temperature=0.0)
-
-    response = llm.invoke(state.get("final_prompt", ""))
-    answer = response.content if hasattr(response, "content") else str(response)
+    llm = get_llm_client()
+    prompt = state.get("final_prompt", "")
 
     metadata = {
         "thread_id": state.get("thread_id", f"unknown-{uuid.uuid4()}"),
@@ -364,8 +368,18 @@ def call_local_llm(state: MedGraphState) -> MedGraphState:
         "retrieved_chunks_count": len(retrieved),
         "status": "success",
     }
-    save_llm_trace_jsonb(prompt=state.get("final_prompt", ""), response=answer, model=VLLM_MODEL, metadata=metadata)
-    return {**state, "raw_llm_output": answer}
+
+    try:
+        response = llm.invoke(prompt)
+        answer = response.content if hasattr(response, "content") else str(response)
+        save_llm_trace_jsonb(prompt=prompt, response=answer, model=VLLM_MODEL, metadata=metadata)
+        return {**state, "raw_llm_output": answer}
+    except Exception as e:
+        logger.error(f"LLM invocation failed: {e}")
+        error_message = f"Ошибка при вызове LLM: {str(e)}"
+        metadata["status"] = "error"
+        save_llm_trace_jsonb(prompt=prompt, response=error_message, model=VLLM_MODEL, metadata=metadata)
+        return {**state, "raw_llm_output": error_message}
 
 
 def build_graph():

@@ -2,10 +2,12 @@ import re
 import numpy as np
 from typing import List, Dict, Any
 from sentence_transformers import CrossEncoder
-from app.core.config import settings
 from .embedder import EmbeddingService
 from .graph_builder import _chunk_node_id, KnowledgeGraphBuilder
 import networkx as nx
+from app.core.config import get_settings
+
+settings = get_settings()
 
 class HybridRetriever:
     #Гибридный поиск: FAISS + BM25 + RRF + CrossEncoder + граф знаний

@@ -73,8 +73,13 @@ def save_llm_trace_jsonb(prompt: str, response: str, model: str, metadata: dict)
         "metadata": metadata,
     }
     try:
+        import fcntl
         with TRACE_FILE.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(trace, ensure_ascii=False) + "\n")
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            try:
+                f.write(json.dumps(trace, ensure_ascii=False) + "\n")
+            finally:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
     except Exception as e:
         logger.warning(f"Failed to write trace to file: {e}")
     return json.dumps(trace, ensure_ascii=False)
@@ -401,7 +406,8 @@ def generate_medical_report(query: str, patient_history: str, patient_data: dict
         "errors": [],
     }
 
-    config = {"configurable": {"thread_id": "api-request"}}
+    thread_id = initial_state["thread_id"]
+    config = {"configurable": {"thread_id": thread_id}}
     graph = get_graph()
     result = graph.invoke(initial_state, config=config)
 

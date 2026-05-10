@@ -14,10 +14,10 @@ class HybridRetriever:
     def __init__(self, embedder: EmbeddingService, top_k: int = None,
                  min_score: float = None, rrf_k: float = None, ce_weight: float = None):
         self.embedder = embedder
-        self.top_k = top_k or settings.TOP_K_RETRIEVAL
-        self.min_score = min_score or settings.MIN_RELEVANCE_SCORE
-        self.rrf_k = rrf_k or settings.RRF_K
-        self.ce_weight = ce_weight or settings.CROSS_ENCODER_WEIGHT
+        self.top_k = top_k if top_k is not None else settings.TOP_K_RETRIEVAL
+        self.min_score = min_score if min_score is not None else settings.MIN_RELEVANCE_SCORE
+        self.rrf_k = rrf_k if rrf_k is not None else settings.RRF_K
+        self.ce_weight = ce_weight if ce_weight is not None else settings.CROSS_ENCODER_WEIGHT
         self.cross_encoder = CrossEncoder(settings.CROSS_ENCODER_MODEL_NAME, device="cpu")
 
     def _apply_rrf(self, ranks: np.ndarray, target: np.ndarray):

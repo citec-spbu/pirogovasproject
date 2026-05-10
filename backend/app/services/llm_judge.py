@@ -127,7 +127,7 @@ FINAL SCORE:
             score = int(score_part.split()[0])
             if 1 <= score <= 10:
                 return score
-        except:
+        except (IndexError, ValueError):
             pass
         return "Неизвестно/Данные не предоставлены"
 

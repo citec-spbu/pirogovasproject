@@ -14,11 +14,12 @@ from langgraph.graph import StateGraph, START, END
 from functools import wraps
 import time
 
-from app.core.config import settings
+from app.core.config import get_settings
 from app.core.rag.kb_manager import KBOrchestrator
 from app.core.rag.embedder import EmbeddingService
 from app.core.rag.retriever import HybridRetriever
 
+settings = get_settings()
 logger = logging.getLogger(__name__)
 
 # Module-level MorphAnalyzer for reuse

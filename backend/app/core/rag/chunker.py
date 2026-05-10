@@ -1,5 +1,7 @@
 from typing import List, Dict, Any
-from app.core.config import settings
+from app.core.config import get_settings
+
+settings = get_settings()
 
 class DocumentChunker:
     def __init__(self, chunk_size: int = None, overlap: int = None, separators: List[str] = None):

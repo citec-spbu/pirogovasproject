@@ -3,13 +3,14 @@ import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from pypdf import PdfReader
-from app.core.config import settings
+from app.core.config import get_settings
 from .chunker import DocumentChunker
 from .embedder import EmbeddingService
 from .vector_store import VectorIndexManager
 from .bm25_index import BM25Manager
 from .graph_builder import KnowledgeGraphBuilder
 
+settings = get_settings()
 logger = logging.getLogger(__name__)
 
 def read_documents(folder: Path) -> List[Dict[str, Any]]:

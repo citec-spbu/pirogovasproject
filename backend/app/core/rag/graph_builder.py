@@ -4,7 +4,9 @@ from typing import List, Dict, Any, Optional
 import pickle
 import networkx as nx
 import pymorphy3
-from app.core.config import settings
+from app.core.config import get_settings
+
+settings = get_settings()
 
 # Медицинские паттерны для извлечения сущностей
 MEDICAL_ENTITY_PATTERNS = {

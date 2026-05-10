@@ -1,6 +1,8 @@
 import numpy as np
 from sentence_transformers import SentenceTransformer, models, CrossEncoder
-from app.core.config import settings
+from app.core.config import get_settings
+
+settings = get_settings()
 
 class EmbeddingService:
     def __init__(self, model_name: str = None, device: str = "cpu"):

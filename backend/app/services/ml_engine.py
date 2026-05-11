@@ -61,6 +61,8 @@ def get_graph():
 def get_llm_client() -> ChatOpenAI:
     global _llm_client
     if _llm_client is None:
+        if not settings.VLLM_API_KEY or not settings.VLLM_BASE_URL:
+            raise ValueError("Не настроены VLLM_API_KEY или VLLM_BASE_URL. Проверьте .env файл.")
         _llm_client = ChatOpenAI(
             model=VLLM_MODEL,
             base_url=VLLM_BASE_URL,

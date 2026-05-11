@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.models.user import User, Organization
-from app.core.role import UserRole
+from app.core.enum.role import UserRole
 from app.core.security import get_password_hash
 from app.core.database import engine, Base, AsyncSessionLocal
 

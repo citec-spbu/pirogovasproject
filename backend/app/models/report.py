@@ -12,14 +12,14 @@ class Report(Base):
     user_id = Column(Integer,ForeignKey("users.id"), nullable=False)
 
     status = Column(Enum(ReportStatus), nullable=False, default=ReportStatus.PROCESSING)
-    template_id = Column(Integer, ForeignKey("templates.id"), nullable=True)
+    template_id = Column(Integer, ForeignKey("report_templates.id"), nullable=True)
     error_message = Column(String, nullable=True)
 
     input_files = Column(JSONB, nullable=False)
     measurements = Column(JSONB, nullable=False)
     meta = Column(JSONB, nullable=False)
 
-    llm_response = Column(JSONB, nullable=False)
+    llm_response = Column(JSONB, nullable=True)
 
     html_object_key = Column(String, nullable=True)
     pdf_object_key = Column(String, nullable=True)

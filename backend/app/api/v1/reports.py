@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.schemas.report import ReportsList, ReviewCreate
+from app.schemas.report import ReportsList, ReportReviewUpdate
 from app.services import report_service
 from app.core.database import get_db
 
@@ -22,10 +22,10 @@ async def make_report(id_report: str = Query(...), db: AsyncSession = Depends(ge
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     
-@router.post("/add_review")
-async def add_review(review: ReviewCreate, db: AsyncSession = Depends(get_db)):
+@router.post("/add_review/{id_report}")
+async def add_review(id_report: str, review: ReportReviewUpdate, db: AsyncSession = Depends(get_db)):
     try:
-        await report_service.add_review(db, review)
+        await report_service.add_review(db, review, id_report)
         return {"message": "Review added successfully"}
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

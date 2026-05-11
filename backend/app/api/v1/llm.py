@@ -1,15 +1,19 @@
 from fastapi import APIRouter, File, UploadFile, Depends, HTTPException, status, Form
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.schemas.report import ReportId, ReportCreate
+from datetime import date
+
+from app.schemas.report import ReportCreateResponse
+from app.core.enum.report_status import ReportStatus
 from app.services import llm_service, report_service
 from app.core.database import get_db
 from app.utils import file_handler
-from datetime import date
-from typing import Optional
+
+from app.api.dependencies import get_current_user
+from app.models.user import User
 
 router = APIRouter(prefix="/llm", tags=["llm"])
 
-@router.post("/create_report", response_model=ReportCreate)
+@router.post("/create_report", response_model=ReportCreateResponse)
 async def create_report(
         # metadata
         patient_name: str = Form(..., description="Patient full name"),
@@ -20,6 +24,7 @@ async def create_report(
         # files
         ct_images: UploadFile = File(..., description="ZIP archive with CT images"),
         measurements_file: UploadFile = File(..., description="Measurements file (CSV/JSON)"),
+        current_user: User = Depends(get_current_user),
         db: AsyncSession = Depends(get_db)
 ):
     try:
@@ -36,7 +41,10 @@ async def create_report(
 
         measurements_dict = file_handler.parse_measurements_file(measurements_bytes, measurements_file.filename)
 
-        photo_path = file_handler.extract_images_from_zip(ct_zip_bytes, ct_images.filename)
+        input_files = {
+        "ct_archive_filename": ct_images.filename,
+        "measurements_filename": measurements_file.filename,
+        }
 
         llm_response, trace_data = await llm_service.process_llm_request(patient_data=measurements_dict, medical_text=medical_text)
 
@@ -46,12 +54,19 @@ async def create_report(
             "errors": llm_response.get("errors", [])
         })
 
-        id_report = await report_service.save_report(db=db, measurements=measurements_dict, photo_path=photo_path,
-                                                     meta=meta, llm_response=llm_response.get("report"), trace_data=trace_data)
-        return ReportCreate(
+        id_report = await report_service.save_report(
+        db=db,
+        measurements=measurements_dict,
+        input_files=input_files,
+        meta=meta,
+        llm_response=llm_response.get("report"),
+        trace_data=trace_data,
+        user_id=current_user.id,
+        )
+
+        return ReportCreateResponse(
             id_report=id_report,
-            warnings=llm_response.get("warnings", []),
-            errors=llm_response.get("errors", [])
+            status=ReportStatus.PROCESSING
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e

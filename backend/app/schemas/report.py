@@ -1,18 +1,20 @@
 from pydantic import BaseModel, ConfigDict
 from datetime import datetime
 from typing import List, Optional
-from app.core.enum import ReportStatus
+from app.core.enum.report_status import ReportStatus
 
 class ReportId(BaseModel):
     id_report: str
 
 class ReportCreate(BaseModel):
-    id_report: str
-    user_id: int
-    template_id: int
-    input_file_path: dict
+    template_id: Optional[int] = None
+    input_files: dict
     measurements: dict
     meta: dict
+
+class ReportCreateResponse(BaseModel):
+    id_report: str
+    status: ReportStatus
 
 class ReportUpdate(BaseModel):
     user_id: Optional[int] = None
@@ -41,12 +43,12 @@ class ReportUpdate(BaseModel):
 class ReportOut(BaseModel):
     id_report: str
     user_id: int
-    template_id: int
+    template_id: Optional[int] = None
     status: ReportStatus
     input_files: dict
     measurements: dict
     meta: dict
-    llm_response: dict
+    llm_response: Optional[dict] = None
     html_object_key: Optional[str] = None
     pdf_object_key: Optional[str] = None
     review_score: Optional[int] = None
@@ -54,6 +56,11 @@ class ReportOut(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+class ReportReviewUpdate(BaseModel):
+    review_score: int
+    review_text: Optional[str] = None
+
 
 class ReportStorageUpdate(BaseModel):
     input_files: Optional[dict] = None

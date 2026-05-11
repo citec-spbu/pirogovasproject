@@ -4,7 +4,9 @@ from pathlib import Path
 from typing import List, Optional
 import numpy as np
 from rank_bm25 import BM25Okapi
-from app.core.config import settings
+from app.core.config import get_settings
+
+settings = get_settings()
 
 class BM25Manager:
     def __init__(self):

@@ -3,6 +3,8 @@ from pathlib import Path
 from typing import Dict, Any
 from langchain_openai import ChatOpenAI
 from app.core.config import settings
+import logging
+logger = logging.getLogger(__name__) 
 
 VLLM_BASE_URL = settings.VLLM_BASE_URL
 VLLM_API_KEY = settings.VLLM_API_KEY
@@ -13,6 +15,8 @@ OUTPUT_FILE = Path("judge_scores.json")
 
 class LLMJudge:
     def __init__(self):
+        if not settings.VLLM_API_KEY or not settings.VLLM_API_KEY.strip():
+            raise RuntimeError("LLM Judge требует настроенный VLLM_API_KEY. Добавьте ключ в .env.")
         self.llm = ChatOpenAI(model=VLLM_MODEL, base_url=VLLM_BASE_URL, api_key=VLLM_API_KEY, temperature=0.0)
 
     def load_latest_trace(self) -> Dict[str, Any]:
@@ -127,8 +131,8 @@ FINAL SCORE:
             score = int(score_part.split()[0])
             if 1 <= score <= 10:
                 return score
-        except:
-            pass
+        except (IndexError, ValueError):
+            logger.warning(f"Не удалось распарсить score из ответа LLM. Ошибка: {e}")
         return "Неизвестно/Данные не предоставлены"
 
     def evaluate_one(self, criterion: str, trace: Dict[str, Any]):

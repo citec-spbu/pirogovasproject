@@ -1,10 +1,11 @@
 #здесь будет все миленькое вроде бы
 from app.services.ml_engine import generate_medical_report
-from app.core.config import settings
+from app.core.config import get_settings
 import asyncio
 import logging
 from typing import Optional
 
+settings = get_settings()
 logger = logging.getLogger(__name__)
 
 async def process_llm_request(patient_data: dict, medical_text: str,

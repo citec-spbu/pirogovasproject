@@ -3,13 +3,14 @@ import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from pypdf import PdfReader
-from app.core.config import settings
+from app.core.config import get_settings
 from .chunker import DocumentChunker
 from .embedder import EmbeddingService
 from .vector_store import VectorIndexManager
 from .bm25_index import BM25Manager
 from .graph_builder import KnowledgeGraphBuilder
 
+settings = get_settings()
 logger = logging.getLogger(__name__)
 
 def read_documents(folder: Path) -> List[Dict[str, Any]]:
@@ -49,8 +50,12 @@ class KBOrchestrator:
         self._kb_cache: Dict[str, Dict[str, Any]] = {}
 
     def _get_cache_prefix(self, folder_path: str, use_bm25: bool = False) -> Path:
+        import hashlib
         base_dir = Path(settings.KB_CACHE_BM25_ROOT if use_bm25 else settings.KB_CACHE_ROOT)
-        safe_name = Path(folder_path).name.replace(" ", "_")
+        resolved_path = Path(folder_path).resolve()
+        path_hash = hashlib.sha256(str(resolved_path).encode()).hexdigest()[:8]
+        bm25_suffix = "_bm25" if use_bm25 else ""
+        safe_name = f"{resolved_path.name}_{path_hash}{bm25_suffix}".replace(" ", "_")
         return base_dir / safe_name
 
     def build_kb(self, folder_path: str, use_bm25: bool = True) -> Dict[str, Any]:
@@ -146,18 +151,26 @@ class KBOrchestrator:
         return self.build_kb(folder_path)
 
     def _clear_cache(self, folder_path: str):
-        prefix = Path(folder_path).name.replace(" ", "_")
+        import hashlib
+        resolved_path = Path(folder_path).resolve()
+        path_hash = hashlib.sha256(str(resolved_path).encode()).hexdigest()[:8]
+        base_name = resolved_path.name.replace(" ", "_")
 
-        for cache_dir in [
-            Path(settings.KB_CACHE_ROOT),
-            Path(settings.KB_CACHE_GRAPH_ROOT),
-            Path(settings.KB_CACHE_BM25_ROOT),
-        ]:
-            for file in cache_dir.glob(f"{prefix}_*"):
-                try:
-                    file.unlink()
-                except Exception as e:
-                    logger.warning(f"Не удалось удалить {file}: {e}")
+        # Clear both bm25 and non-bm25 variants
+        for use_bm25 in [False, True]:
+            bm25_suffix = "_bm25" if use_bm25 else ""
+            prefix = f"{base_name}_{path_hash}{bm25_suffix}"
+
+            for cache_dir in [
+                Path(settings.KB_CACHE_ROOT),
+                Path(settings.KB_CACHE_GRAPH_ROOT),
+                Path(settings.KB_CACHE_BM25_ROOT),
+            ]:
+                for file in cache_dir.glob(f"{prefix}_*"):
+                    try:
+                        file.unlink()
+                    except Exception as e:
+                        logger.warning(f"Не удалось удалить {file}: {e}")
 
         self._kb_cache.pop(folder_path, None)
 

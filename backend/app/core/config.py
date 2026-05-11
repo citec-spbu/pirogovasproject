@@ -48,19 +48,8 @@ class Settings(BaseSettings):
     VLLM_API_KEY: Optional[str] = None
     VLLM_MODEL: str = "Qwen/Qwen2.5-0.5B-Instruct"
 
-    @field_validator("VLLM_API_KEY")
-    @classmethod
-    def validate_vllm_api_key(cls, v: Optional[str]) -> str:
-        if v is None or not v.strip():
-            raise ValueError(
-                "VLLM_API_KEY is required but not set. Please provide it in the .env file or environment variables."
-            )
-        return v
-
     model_config = SettingsConfigDict(env_file=".env")
 
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-
-settings=get_settings()

@@ -1,22 +1,22 @@
 import re
 import numpy as np
 from typing import List, Dict, Any
-from sentence_transformers import CrossEncoder
-from app.core.config import settings
 from .embedder import EmbeddingService
-from .graph_builder import _chunk_node_id, KnowledgeGraphBuilder
+from .graph_builder import _chunk_node_id, normalize_text
 import networkx as nx
+from app.core.config import get_settings
+
+settings = get_settings()
 
 class HybridRetriever:
     #Гибридный поиск: FAISS + BM25 + RRF + CrossEncoder + граф знаний
     def __init__(self, embedder: EmbeddingService, top_k: int = None,
                  min_score: float = None, rrf_k: float = None, ce_weight: float = None):
         self.embedder = embedder
-        self.top_k = top_k or settings.TOP_K_RETRIEVAL
-        self.min_score = min_score or settings.MIN_RELEVANCE_SCORE
-        self.rrf_k = rrf_k or settings.RRF_K
-        self.ce_weight = ce_weight or settings.CROSS_ENCODER_WEIGHT
-        self.cross_encoder = CrossEncoder(settings.CROSS_ENCODER_MODEL_NAME, device="cpu")
+        self.top_k = top_k if top_k is not None else settings.TOP_K_RETRIEVAL
+        self.min_score = min_score if min_score is not None else settings.MIN_RELEVANCE_SCORE
+        self.rrf_k = rrf_k if rrf_k is not None else settings.RRF_K
+        self.ce_weight = ce_weight if ce_weight is not None else settings.CROSS_ENCODER_WEIGHT
 
     def _apply_rrf(self, ranks: np.ndarray, target: np.ndarray):
         for rank, idx in enumerate(ranks, start=1):
@@ -25,7 +25,7 @@ class HybridRetriever:
     def _apply_json_heuristics(self, candidates: List[Dict[str, Any]], keywords_from_json: set) -> List[Dict[str, Any]]:
         for c in candidates:
             chunk_lower = c["text"].lower()
-            chunk_normalized = KnowledgeGraphBuilder._normalize_text(c["text"])
+            chunk_normalized = normalize_text(c["text"])
             # NER-бонус
             matches = keywords_from_json.intersection(chunk_normalized)
             c["score"] += len(matches) * 0.05
@@ -97,8 +97,7 @@ class HybridRetriever:
             })
         # 4. Cross-Encoder reranking
         if results:
-            pairs = [[query, r["text"]] for r in results]
-            ce_scores = self.cross_encoder.predict(pairs, show_progress_bar=False)
+            ce_scores = self.embedder.rerank(query, [r["text"] for r in results])
             for i, r in enumerate(results):
                 r["score"] = (1 - self.ce_weight) * r["score"] + self.ce_weight * float(ce_scores[i])
         results.sort(key=lambda x: x["score"], reverse=True)

@@ -4,7 +4,17 @@ from typing import List, Dict, Any, Optional
 import pickle
 import networkx as nx
 import pymorphy3
-from app.core.config import settings
+from app.core.config import get_settings
+
+settings = get_settings()
+
+# Module-level singleton for morphological analysis
+_morph = pymorphy3.MorphAnalyzer()
+
+def normalize_text(text: str) -> set:
+    """Лемматизация текста для нормализации ключевых слов."""
+    words = re.findall(r'\b[а-яА-ЯёЁa-zA-Z]{3,}\b', text.lower())
+    return {_morph.parse(w)[0].normal_form for w in words}
 
 # Медицинские паттерны для извлечения сущностей
 MEDICAL_ENTITY_PATTERNS = {
@@ -68,12 +78,6 @@ class KnowledgeGraphBuilder:
     def __init__(self, cache_dir: str = None):
         self.cache_dir = Path(cache_dir or settings.KB_CACHE_GRAPH_ROOT)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        self.morph = pymorphy3.MorphAnalyzer()
-
-    def _normalize_text(self, text: str) -> set:
-        #Лемматизация текста для нормализации ключевых слов
-        words = re.findall(r'\b[а-яА-ЯёЁa-zA-Z]{3,}\b', text.lower())
-        return {self.morph.parse(w)[0].normal_form for w in words}
 
     def build(self, chunks: List[Dict[str, Any]]) -> nx.Graph:
         #Строит граф знаний из списка чанков

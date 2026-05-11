@@ -1,16 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.schemas.report import ReportsListResponse, ReviewCreate
+from app.schemas.report import ReportsList, ReviewCreate
 from app.services import report_service
 from app.core.database import get_db
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
-@router.get("/get_id_reports", response_model=ReportsListResponse)
+@router.get("/get_id_reports", response_model=ReportsList)
 async def get_id_reports(login: str = Query(...), db: AsyncSession = Depends(get_db)):
     try:
         reports = await report_service.get_reports_by_login(db, login)
-        return ReportsListResponse(reports=reports)
+        return ReportsList(reports=reports)
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail = str(e))
     

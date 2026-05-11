@@ -1,6 +1,6 @@
 from fastapi import APIRouter, File, UploadFile, Depends, HTTPException, status, Form
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.schemas.report import ReportIdResponse, ReportCreateResponse
+from app.schemas.report import ReportId, ReportCreate
 from app.services import llm_service, report_service
 from app.core.database import get_db
 from app.utils import file_handler
@@ -9,7 +9,7 @@ from typing import Optional
 
 router = APIRouter(prefix="/llm", tags=["llm"])
 
-@router.post("/create_report", response_model=ReportCreateResponse)
+@router.post("/create_report", response_model=ReportCreate)
 async def create_report(
         # metadata
         patient_name: str = Form(..., description="Patient full name"),
@@ -48,7 +48,7 @@ async def create_report(
 
         id_report = await report_service.save_report(db=db, measurements=measurements_dict, photo_path=photo_path,
                                                      meta=meta, llm_response=llm_response.get("report"), trace_data=trace_data)
-        return ReportCreateResponse(
+        return ReportCreate(
             id_report=id_report,
             warnings=llm_response.get("warnings", []),
             errors=llm_response.get("errors", [])

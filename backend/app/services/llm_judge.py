@@ -13,6 +13,8 @@ OUTPUT_FILE = Path("judge_scores.json")
 
 class LLMJudge:
     def __init__(self):
+        if not settings.VLLM_API_KEY or not settings.VLLM_API_KEY.strip():
+            raise RuntimeError("LLM Judge требует настроенный VLLM_API_KEY. Добавьте ключ в .env.")
         self.llm = ChatOpenAI(model=VLLM_MODEL, base_url=VLLM_BASE_URL, api_key=VLLM_API_KEY, temperature=0.0)
 
     def load_latest_trace(self) -> Dict[str, Any]:

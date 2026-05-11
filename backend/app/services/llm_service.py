@@ -34,17 +34,7 @@ async def process_llm_request(patient_data: dict, medical_text: str,
     }
     return llm_response, trace_data
 
-async def get_structured_answer(patient_ dict, medical_text: str, guideline_paths: Optional[list[str]] = None) -> Dict[str, str]:
-    if not guideline_paths:
-        gp = getattr(settings, "GUIDELINE_PATHS", None)
-        guideline_paths = [gp] if gp and isinstance(gp, str) else (gp or [])
-    ml_args = {"query": medical_text.strip(), "patient_history": medical_text.strip(), "patient_data": patient_data, "guideline_paths": guideline_paths}
-    try:
-        llm_response = await asyncio.to_thread(generate_medical_report, **ml_args)
-    except Exception as e:
-        logger.error(f"LLM error in get_structured_answer: {e}", exc_info=True)
-        raise
-      
+async def get_structured_answer(llm_responce) -> Dict[str, str]:
     raw_report = llm_response.get("report", "")
     if not raw_report:
         return {"diagnosis": "", "clinical_recommendations": ""}

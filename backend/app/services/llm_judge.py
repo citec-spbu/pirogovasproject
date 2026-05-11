@@ -3,6 +3,8 @@ from pathlib import Path
 from typing import Dict, Any
 from langchain_openai import ChatOpenAI
 from app.core.config import settings
+import logging
+logger = logging.getLogger(__name__) 
 
 VLLM_BASE_URL = settings.VLLM_BASE_URL
 VLLM_API_KEY = settings.VLLM_API_KEY
@@ -130,7 +132,7 @@ FINAL SCORE:
             if 1 <= score <= 10:
                 return score
         except (IndexError, ValueError):
-            pass
+            logger.warning(f"Не удалось распарсить score из ответа LLM. Ошибка: {e}")
         return "Неизвестно/Данные не предоставлены"
 
     def evaluate_one(self, criterion: str, trace: Dict[str, Any]):

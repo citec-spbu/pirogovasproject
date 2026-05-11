@@ -9,3 +9,11 @@ asyncpg
 uvicorn
 python-multipart
 python-jose[cryptography]
+rank-bm25
+pymorphy3
+networkx
+faiss-cpu
+langgraph
+sentence-transformers
+pypdf
+langchain-openai

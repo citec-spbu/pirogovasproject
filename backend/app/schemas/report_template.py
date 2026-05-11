@@ -8,7 +8,6 @@ class ReportTemplateCreate(BaseModel):
     description: Optional[str] = None
     content: str
     is_active: bool = False
-    created_by_user_id: int
 
 class ReportTemplateOut(ReportTemplateCreate):
     id: int

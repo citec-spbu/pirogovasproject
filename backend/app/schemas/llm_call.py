@@ -5,7 +5,6 @@ from datetime import datetime
 
 class LLMCallCreate(BaseModel):
     report_id: int
-    user_id: int
     call_type: CallType
     provider: str
     model: str

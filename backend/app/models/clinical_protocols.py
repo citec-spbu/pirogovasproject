@@ -17,6 +17,6 @@ class ClinicalProtocol(Base):
     error_message = Column(String, nullable=True)
 
     uploaded_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    uploaded_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    uploaded_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     indexed_at = Column(DateTime(timezone=True), nullable=True)

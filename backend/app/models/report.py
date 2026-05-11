@@ -27,9 +27,8 @@ class Report(Base):
     review_score = Column(Integer, nullable=True)
     review_text = Column(String, nullable=True)
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
-    reviewer_user_id = Column(Integer,ForeignKey("users.id"), nullable=True)
 
     generation_started_at = Column(DateTime(timezone=True), nullable=True)
     generation_completed_at = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

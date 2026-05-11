@@ -32,10 +32,12 @@ async def save_report(db: AsyncSession, measurements,input_files,meta, llm_respo
     db.add(report)
     await db.flush()
 
+
+    has_errors = bool((trace_data or {}).get("errors"))
     llm_call = LLMCall(
         report_id=report.id,
         user_id=user_id,
-        status=CallStatus.COMPLETED,
+        status=CallStatus.FAILED if has_errors else CallStatus.COMPLETED,
         call_type=CallType.REPORT_GENERATION,
         provider="vllm",
         model=settings.VLLM_MODEL,
@@ -74,6 +76,7 @@ async def generate_report(db: AsyncSession, id_report: str, output_dir: str = "r
     pdf_object_key = generate_pdf_from_html(html_object_key, output_dir)
     report.html_object_key = html_object_key
     report.pdf_object_key = pdf_object_key
+    report.status = ReportStatus.COMPLETED
     await db.commit()
     return html_object_key, pdf_object_key
     

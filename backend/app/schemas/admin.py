@@ -1,6 +1,7 @@
 from pydantic import BaseModel,ConfigDict
 from datetime import date
-from app.core.role import UserRole
+from app.core.enum.role import UserRole
+from typing import Optional
 
 class AdminCreateUser(BaseModel):
     login: str
@@ -13,13 +14,13 @@ class AdminCreateUser(BaseModel):
     date_of_birth: date
 
 class AdminUpdateUser(BaseModel):
-    role: UserRole | None = None
-    name: str | None = None
-    surname: str | None = None
-    organization_id: int | None = None
-    patronymic: str | None = None
-    date_of_birth: date | None = None
-    is_active: bool | None = None
+    role: Optional[UserRole] = None
+    name: Optional[str] = None
+    surname: Optional[str] = None
+    organization_id: Optional[int] = None
+    patronymic: Optional[str] = None
+    date_of_birth: Optional[date] = None
+    is_active: Optional[bool] = None
 
 
 class AdminUserOut(BaseModel):

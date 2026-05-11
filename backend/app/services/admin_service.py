@@ -6,7 +6,7 @@ from sqlalchemy import select
 from app.models.user import User, Organization
 from app.schemas.admin import AdminCreateUser, AdminUserOut, AdminUpdateUser
 from app.core.security import get_password_hash, verify_password
-from app.core.role import UserRole
+from app.core.enum.role import UserRole
 
 async def create_user(db: AsyncSession, user_data: AdminCreateUser) -> User:
     result = await db.execute(select(User).where(User.login == user_data.login))

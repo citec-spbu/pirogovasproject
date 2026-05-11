@@ -20,6 +20,21 @@ services:
     networks:
       - backend
   
+  minio:
+    image: minio/minio:latest
+    container_name: ct_photos_minio
+    command: server /data --console-address ":9001"
+    environmentt:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      -minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks:
+      - backend
+  
 
   backend:
     build: ./backend
@@ -27,6 +42,8 @@ services:
     depends_on:
       database:
         condition: service_healthy
+      minio:
+        condition: service_started
     env_file:
       - .env
     environment:
@@ -41,6 +58,7 @@ services:
 
 volumes:
   postgres_data:
+  minio_data:
   
 networks:
   backend:

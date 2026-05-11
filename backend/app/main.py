@@ -5,9 +5,11 @@ from app.api.v1 import users, admin, reports, llm
 
 from app.core.database import engine
 from app.services.bootstrap_service import bootstrap
+from app.services.storage_service import ensure_bucket_exists
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    await ensure_bucket_exists()
     await bootstrap()
     yield
     await engine.dispose()

@@ -9,6 +9,7 @@ from app.core.enum.report_status import ReportStatus
 from app.schemas.report import ReportReviewUpdate
 from app.core.enum.call_type import CallType, CallStatus
 from app.core.config import get_settings
+from app.services import storage_service
 
 from app.utils.pdf_generator import generate_pdf_from_html
 from app.utils.html_report_generator import generate_html_report

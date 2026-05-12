@@ -1,10 +1,11 @@
 from functools import wraps
-from typing import Any, Dict
+from typing import Any, Dict, Optional
+import asyncio
 import json
+import logging
 import os
 import re
 import time
-from app.core.config import get_settings
 
 try:
     from dotenv import load_dotenv
@@ -12,12 +13,30 @@ except ImportError:  # pragma: no cover - optional dependency guard
     def load_dotenv(*args, **kwargs):
         return None
 
-settings=get_settings()
-#load_dotenv()
+try:
+    from app.core.config import get_settings
+except ImportError:  # pragma: no cover - allows standalone module checks
+    get_settings = None
 
-VLLM_BASE_URL = settings.VLLM_BASE_URL
-VLLM_API_KEY = settings.VLLM_API_KEY
-VLLM_MODEL = settings.VLLM_MODEL
+
+load_dotenv()
+
+settings = get_settings() if get_settings is not None else None
+logger = logging.getLogger(__name__)
+
+
+def _setting(name: str, default: Optional[str] = None) -> Optional[str]:
+    """Read setting from app config first, then from environment."""
+    if settings is not None and hasattr(settings, name):
+        value = getattr(settings, name)
+        if value is not None:
+            return value
+    return os.getenv(name, default)
+
+
+VLLM_BASE_URL = _setting("VLLM_BASE_URL", "http://localhost:8000/v1")
+VLLM_API_KEY = _setting("VLLM_API_KEY", "token-abc123")
+VLLM_MODEL = _setting("VLLM_MODEL", "Qwen/Qwen2.5-0.5B-Instruct")
 
 GUIDELINES_FOR_LLM_TOP_K = 4
 MAX_GUIDELINE_CHARS = 1200
@@ -144,3 +163,86 @@ def call_local_llm(state: Dict[str, Any]) -> Dict[str, Any]:
         **state,
         "raw_llm_output": answer,
     }
+
+
+async def process_llm_request(
+    patient_data: dict,
+    medical_text: str,
+    guideline_paths: Optional[list[str]] = None,
+) -> tuple[dict, dict]:
+    """Run the ML/RAG pipeline from an async service layer."""
+    if not guideline_paths:
+        gp = getattr(settings, "GUIDELINE_PATHS", None) if settings is not None else None
+        guideline_paths = [gp] if gp and isinstance(gp, str) else (gp or [])
+
+    ml_args = {
+        "query": medical_text.strip(),
+        "patient_history": medical_text.strip(),
+        "patient_data": patient_data,
+        "guideline_paths": guideline_paths,
+    }
+
+    try:
+        # Import here to avoid circular import:
+        # ml_engine imports build_prompt/call_local_llm/fuse_context from this module.
+        from app.services.ml_engine import generate_medical_report
+
+        llm_response = await asyncio.to_thread(generate_medical_report, **ml_args)
+    except Exception as e:
+        logger.error("LLM/RAG error in process_llm_request: %s", e, exc_info=True)
+        raise
+
+    trace_data = {
+        "model": VLLM_MODEL,
+        "input_keys": list(ml_args.keys()),
+    }
+    return llm_response, trace_data
+
+
+async def get_structured_answer(llm_response: Dict[str, Any]) -> Dict[str, str]:
+    raw_report = llm_response.get("report", "")
+    if not raw_report:
+        return {"diagnosis": "", "clinical_recommendations": ""}
+
+    # Вырезаем только блок [Заключение]
+    match = re.search(r"\[Заключение\]\s*(.*?)(?=\[|$)", raw_report, re.DOTALL | re.IGNORECASE)
+    conclusion_block = match.group(1).strip() if match else raw_report.strip()
+
+    # Убираем служебные заголовки
+    conclusion_block = re.sub(
+        r"Предварительный\s+диагноз[/\\]статус:\s*",
+        "",
+        conclusion_block,
+        flags=re.IGNORECASE,
+    )
+    conclusion_block = re.sub(
+        r"Рекомендации\s+по\s+тактике:\s*",
+        "",
+        conclusion_block,
+        flags=re.IGNORECASE,
+    )
+
+    # Разделяем диагноз и рекомендации по началу нумерованного списка
+    rec_start = re.search(r"\n\s*\d+\.\s", conclusion_block)
+    if rec_start:
+        diagnosis = conclusion_block[:rec_start.start()].strip()
+        recommendations = conclusion_block[rec_start.start():].strip()
+    else:
+        diagnosis = conclusion_block
+        recommendations = ""
+
+    # Удаляем дисклеймер в конце
+    disclaimer = r"(?:^|\n)Заключение\s+носит\s+информационно[ -]аналитический.*?(?:врачом|обследования)\.?"
+    diagnosis = re.sub(disclaimer, "", diagnosis, flags=re.IGNORECASE | re.DOTALL).strip()
+    recommendations = re.sub(disclaimer, "", recommendations, flags=re.IGNORECASE | re.DOTALL).strip()
+
+    # Удаляем ссылки на литературу
+    ref_pattern = r"\[\s*\d+(?:\s*[,\-\s]\s*\d+)*\s*\]"
+    diagnosis = re.sub(ref_pattern, "", diagnosis)
+    recommendations = re.sub(ref_pattern, "", recommendations)
+
+    # Нормализация пробелов
+    diagnosis = re.sub(r"\s+", " ", diagnosis).strip()
+    recommendations = re.sub(r"\n\s*\n", "\n", recommendations).strip()
+
+    return {"diagnosis": diagnosis, "clinical_recommendations": recommendations}

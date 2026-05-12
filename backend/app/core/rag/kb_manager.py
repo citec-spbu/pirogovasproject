@@ -1,6 +1,9 @@
 from functools import wraps
 from typing import Any, Dict, List
+import asyncio
+import logging
 import time
+import traceback
 
 import numpy as np
 
@@ -37,6 +40,10 @@ except ImportError:
 
 
 KB_CACHE: Dict[str, Dict[str, Any]] = {}
+KB_CACHE_LOCKS: Dict[str, asyncio.Lock] = {}
+KB_CACHE_LOCK = asyncio.Lock()
+
+logger = logging.getLogger(__name__)
 
 
 def track_node_time(func):
@@ -107,6 +114,38 @@ def build_kb(folder_path: str, use_bm25: bool = True) -> Dict[str, Any]:
     return kb
 
 
+async def _get_or_create_lock(docs_path: str) -> asyncio.Lock:
+    """Get or create a lock for a specific docs_path."""
+    async with KB_CACHE_LOCK:
+        if docs_path not in KB_CACHE_LOCKS:
+            KB_CACHE_LOCKS[docs_path] = asyncio.Lock()
+        return KB_CACHE_LOCKS[docs_path]
+
+
+def _initialize_kb_sync(docs_path: str, use_bm25: bool) -> Dict[str, Any]:
+    """Synchronous KB initialization logic."""
+    kb = load_kb_from_disk(docs_path, use_bm25=use_bm25)
+
+    if kb is None:
+        print("KB cache not found. Building from scratch...")
+        kb = build_kb(docs_path, use_bm25=use_bm25)
+        save_kb_to_disk(docs_path, kb, use_bm25=use_bm25)
+
+        if kb.get("knowledge_graph") is not None:
+            save_graph_to_disk(docs_path, kb["knowledge_graph"])
+    else:
+        print("KB loaded from disk cache.")
+        graph = load_graph_from_disk(docs_path)
+        if graph is None:
+            print("Graph cache not found. Building graph from chunks...")
+            graph = build_knowledge_graph(kb["chunks"])
+            save_graph_to_disk(docs_path, graph)
+
+        kb["knowledge_graph"] = graph
+
+    return kb
+
+
 @track_node_time
 def initialize_kb(state: Dict[str, Any]) -> Dict[str, Any]:
     warnings = list(state.get("warnings", []))
@@ -124,29 +163,19 @@ def initialize_kb(state: Dict[str, Any]) -> Dict[str, Any]:
     use_bm25 = True
 
     try:
-        if docs_path not in KB_CACHE:
-            kb = load_kb_from_disk(docs_path, use_bm25=use_bm25)
+        # Use asyncio.run to handle the lock acquisition
+        lock = asyncio.run(_get_or_create_lock(docs_path))
 
-            if kb is None:
-                print("KB cache not found. Building from scratch...")
-                kb = build_kb(docs_path, use_bm25=use_bm25)
-                save_kb_to_disk(docs_path, kb, use_bm25=use_bm25)
+        # Acquire lock for this specific docs_path
+        async def _locked_init():
+            async with lock:
+                if docs_path not in KB_CACHE:
+                    # Double-check after acquiring lock
+                    kb = _initialize_kb_sync(docs_path, use_bm25)
+                    KB_CACHE[docs_path] = kb
+                return KB_CACHE[docs_path]
 
-                if kb.get("knowledge_graph") is not None:
-                    save_graph_to_disk(docs_path, kb["knowledge_graph"])
-            else:
-                print("KB loaded from disk cache.")
-                graph = load_graph_from_disk(docs_path)
-                if graph is None:
-                    print("Graph cache not found. Building graph from chunks...")
-                    graph = build_knowledge_graph(kb["chunks"])
-                    save_graph_to_disk(docs_path, graph)
-
-                kb["knowledge_graph"] = graph
-
-            KB_CACHE[docs_path] = kb
-        else:
-            kb = KB_CACHE[docs_path]
+        kb = asyncio.run(_locked_init())
 
         if not kb.get("chunks"):
             warnings.append("После разбиения документов не получено ни одного чанка")
@@ -162,9 +191,11 @@ def initialize_kb(state: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     except Exception as exc:
+        logger.exception("Не удалось инициализировать KB для %s", docs_path)
+        tb_text = traceback.format_exc()
         return {
             **state,
-            "warnings": warnings + [f"Не удалось инициализировать KB: {exc}"],
+            "warnings": warnings + [f"Не удалось инициализировать KB: {exc}\n\nTraceback:\n{tb_text}"],
             "errors": errors,
             "chunks_count": 0,
         }

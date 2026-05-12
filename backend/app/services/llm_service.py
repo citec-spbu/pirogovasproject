@@ -3,7 +3,9 @@ from typing import Any, Dict, Optional
 import asyncio
 import json
 import logging
+import os
 import re
+import time
 
 try:
     from dotenv import load_dotenv
@@ -152,6 +154,7 @@ def call_local_llm(state: Dict[str, Any]) -> Dict[str, Any]:
         api_key=VLLM_API_KEY,
         temperature=0.5,
         max_tokens=5000,
+        timeout=30,
     )
 
     response = llm.invoke(state.get("final_prompt", ""))
@@ -205,15 +208,20 @@ async def get_structured_answer(llm_responce) -> Dict[str, str]:
     match = re.search(r'\[Заключение\]\s*(.*?)(?=\[|$)', raw_report, re.DOTALL | re.IGNORECASE)
     conclusion_block = match.group(1).strip() if match else raw_report.strip()
 
-    #Убираем служебные заголовки
+    #Убираем служебный заголовок диагноза
     conclusion_block = re.sub(r'Предварительный\s+диагноз[/\\]статус:\s*', '', conclusion_block, flags=re.IGNORECASE)
-    conclusion_block = re.sub(r'Рекомендации\s+по\s+тактике:\s*', '', conclusion_block, flags=re.IGNORECASE)
-  
-    #Разделяем диагноз и рекомендации по началу нумерованного списка
+
+    #Разделяем диагноз и рекомендации по началу нумерованного списка или маркеру
     rec_start = re.search(r'\n\s*\d+\.\s', conclusion_block)
+    if not rec_start:
+        # Try to find "Рекомендации по тактике:" marker
+        rec_start = re.search(r'Рекомендации\s+по\s+тактике:\s*', conclusion_block, flags=re.IGNORECASE)
+
     if rec_start:
         diagnosis = conclusion_block[:rec_start.start()].strip()
         recommendations = conclusion_block[rec_start.start():].strip()
+        # Remove the leading "Рекомендации по тактике:" marker from recommendations only
+        recommendations = re.sub(r'^Рекомендации\s+по\s+тактике:\s*', '', recommendations, flags=re.IGNORECASE)
     else:
         diagnosis = conclusion_block
         recommendations = ""

@@ -357,7 +357,14 @@ def merge_retrieval_results(
 
     results = list(merged.values())
     results.sort(key=lambda item: item["final_score"], reverse=True)
-    return results[:final_top_k]
+
+    # Filter by MIN_FINAL_RELEVANCE_SCORE
+    filtered_results = [
+        result for result in results
+        if result["final_score"] >= MIN_FINAL_RELEVANCE_SCORE
+    ]
+
+    return filtered_results[:final_top_k]
 
 
 @track_node_time

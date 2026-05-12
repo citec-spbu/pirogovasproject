@@ -30,6 +30,11 @@ def get_cache_prefix(folder_path: str, use_bm25: bool = False) -> Path:
 def build_faiss_index(embeddings: np.ndarray):
     faiss = _get_faiss()
     dim = embeddings.shape[1] if len(embeddings) > 0 else 0
+
+    # Return early if no embeddings to avoid creating invalid FAISS index
+    if dim == 0:
+        return None, 0
+
     index = faiss.IndexHNSWFlat(dim, 32)
     if len(embeddings) > 0:
         index.add(embeddings)

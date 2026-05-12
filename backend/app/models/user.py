@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, Date, DateTime, Boolean,ForeignKey, Enum, func
 from app.core.database import Base
-from app.core.role import UserRole
+from app.core.enum.role import UserRole
 
 class Organization(Base):
     __tablename__ = "organizations"

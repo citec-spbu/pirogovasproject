@@ -3,9 +3,7 @@ from typing import Any, Dict, Optional
 import asyncio
 import json
 import logging
-import os
 import re
-import time
 
 try:
     from dotenv import load_dotenv
@@ -198,32 +196,21 @@ async def process_llm_request(
     }
     return llm_response, trace_data
 
-
-async def get_structured_answer(llm_response: Dict[str, Any]) -> Dict[str, str]:
+async def get_structured_answer(llm_responce) -> Dict[str, str]:
     raw_report = llm_response.get("report", "")
     if not raw_report:
         return {"diagnosis": "", "clinical_recommendations": ""}
 
-    # Вырезаем только блок [Заключение]
-    match = re.search(r"\[Заключение\]\s*(.*?)(?=\[|$)", raw_report, re.DOTALL | re.IGNORECASE)
+    #Вырезаем только блок [Заключение]
+    match = re.search(r'\[Заключение\]\s*(.*?)(?=\[|$)', raw_report, re.DOTALL | re.IGNORECASE)
     conclusion_block = match.group(1).strip() if match else raw_report.strip()
 
-    # Убираем служебные заголовки
-    conclusion_block = re.sub(
-        r"Предварительный\s+диагноз[/\\]статус:\s*",
-        "",
-        conclusion_block,
-        flags=re.IGNORECASE,
-    )
-    conclusion_block = re.sub(
-        r"Рекомендации\s+по\s+тактике:\s*",
-        "",
-        conclusion_block,
-        flags=re.IGNORECASE,
-    )
-
-    # Разделяем диагноз и рекомендации по началу нумерованного списка
-    rec_start = re.search(r"\n\s*\d+\.\s", conclusion_block)
+    #Убираем служебные заголовки
+    conclusion_block = re.sub(r'Предварительный\s+диагноз[/\\]статус:\s*', '', conclusion_block, flags=re.IGNORECASE)
+    conclusion_block = re.sub(r'Рекомендации\s+по\s+тактике:\s*', '', conclusion_block, flags=re.IGNORECASE)
+  
+    #Разделяем диагноз и рекомендации по началу нумерованного списка
+    rec_start = re.search(r'\n\s*\d+\.\s', conclusion_block)
     if rec_start:
         diagnosis = conclusion_block[:rec_start.start()].strip()
         recommendations = conclusion_block[rec_start.start():].strip()
@@ -231,18 +218,18 @@ async def get_structured_answer(llm_response: Dict[str, Any]) -> Dict[str, str]:
         diagnosis = conclusion_block
         recommendations = ""
 
-    # Удаляем дисклеймер в конце
-    disclaimer = r"(?:^|\n)Заключение\s+носит\s+информационно[ -]аналитический.*?(?:врачом|обследования)\.?"
-    diagnosis = re.sub(disclaimer, "", diagnosis, flags=re.IGNORECASE | re.DOTALL).strip()
-    recommendations = re.sub(disclaimer, "", recommendations, flags=re.IGNORECASE | re.DOTALL).strip()
+    #Удаляем дисклеймер в конце
+    disclaimer = r'(?:^|\n)Заключение\s+носит\s+информационно[ -]аналитический.*?(?:врачом|обследования)\.?'
+    diagnosis = re.sub(disclaimer, '', diagnosis, flags=re.IGNORECASE | re.DOTALL).strip()
+    recommendations = re.sub(disclaimer, '', recommendations, flags=re.IGNORECASE | re.DOTALL).strip()
 
-    # Удаляем ссылки на литературу
-    ref_pattern = r"\[\s*\d+(?:\s*[,\-\s]\s*\d+)*\s*\]"
-    diagnosis = re.sub(ref_pattern, "", diagnosis)
-    recommendations = re.sub(ref_pattern, "", recommendations)
+    #Удаляем ссылки на литературу
+    ref_pattern = r'\[\s*\d+(?:\s*[,\-\s]\s*\d+)*\s*\]'
+    diagnosis = re.sub(ref_pattern, '', diagnosis)
+    recommendations = re.sub(ref_pattern, '', recommendations)
 
-    # Нормализация пробелов
-    diagnosis = re.sub(r"\s+", " ", diagnosis).strip()
-    recommendations = re.sub(r"\n\s*\n", "\n", recommendations).strip()
+    #Нормализация пробелов
+    diagnosis = re.sub(r'\s+', ' ', diagnosis).strip()
+    recommendations = re.sub(r'\n\s*\n', '\n', recommendations).strip()
 
     return {"diagnosis": diagnosis, "clinical_recommendations": recommendations}

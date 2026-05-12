@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Any, Dict, List, TypedDict
 import json
+import logging
 
 try:
     from backend.app.core.rag.kb_manager import ingest_request, initialize_kb
@@ -25,7 +26,18 @@ class MedGraphState(TypedDict, total=False):
     final_prompt: str
     raw_llm_output: str
     chunks_count: int
+    
+def configure_logging(level: int = logging.INFO) -> None:
+    """
+    Configures application logging for local script runs.
 
+    In production/FastAPI this function can be skipped if logging is already
+    configured by the application server.
+    """
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    )
 
 def build_graph():
     from langgraph.checkpoint.memory import InMemorySaver
@@ -81,6 +93,9 @@ def export_langsmith_runs(
                 "outputs": run.outputs,
             }
             file.write(json.dumps(data, ensure_ascii=False, default=str) + "\n")
+            exported_count += 1
+
+    logger.info("LangSmith runs were exported successfully: count=%s", exported_count)
 
 
 def run_demo() -> Dict[str, Any]:
@@ -103,60 +118,28 @@ def run_demo() -> Dict[str, Any]:
 
     result = graph.invoke(initial_state, config=config)
 
-    print("\n=== WARNINGS ===")
-    print(result.get("warnings", []))
+     result = graph.invoke(initial_state, config=config)
 
-    print("\n=== ERRORS ===")
-    print(result.get("errors", []))
+    warnings = result.get("warnings", [])
+    errors = result.get("errors", [])
+    retrieved_guidelines = result.get("retrieved_guidelines", [])
 
-    print("\n=== CHUNKS ===")
-    print(result.get("chunks_count", 0))
+    if warnings:
+        logger.warning("Warnings: %s", warnings)
+    else:
+        logger.info("Warnings: none")
 
-    print("\n=== RETRIEVED ===")
-    for item in result.get("retrieved_guidelines", []):
-        print(item)
+    if errors:
+        logger.error("Errors: %s", errors)
+    else:
+        logger.info("Errors: none")
 
-    print("\n=== FUSED CONTEXT ===")
-    print(result.get("fused_context", ""))
+    logger.info("Chunks count: %s", result.get("chunks_count", 0))
+    logger.info("Retrieved guidelines count: %s", len(retrieved_guidelines))
 
-    print("\n=== ANSWER ===")
-    print(result.get("raw_llm_output", ""))
+    for index, item in enumerate(retrieved_guidelines, start=1):
+        logger.info("Retrieved guideline %s: %s", index, item)
 
-    return result
+    logger.debug("Fused context: %s", result.get("fused_context", ""))
+    logger.info("Raw LLM output: %s", result.get("raw_llm_output", ""))
 
-
-def structural_check() -> None:
-    expected_files = {
-        "llm_service.py",
-        "ml_engine.py",
-        "chunker.py",
-        "embedder.py",
-        "vector_store.py",
-        "bm25_index.py",
-        "graph_builder.py",
-        "retriever.py",
-        "kb_manager.py",
-    }
-    current_files = {path.name for path in Path(__file__).resolve().parent.glob("*.py")}
-    missing = sorted(expected_files - current_files)
-    extra = sorted(current_files - expected_files)
-
-    if missing or extra:
-        raise RuntimeError(f"Неверная структура. Missing={missing}; Extra={extra}")
-
-    print("STRUCTURE_OK")
-
-
-if __name__ == "__main__":
-    import sys
-
-    if "--check" in sys.argv:
-        structural_check()
-        raise SystemExit(0)
-
-    result = run_demo()
-
-    try:
-        export_langsmith_runs()
-    except Exception as exc:
-        print(f"\n=== LANGSMITH EXPORT WARNING ===\n{exc}")

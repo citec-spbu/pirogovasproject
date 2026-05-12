@@ -4,6 +4,7 @@ import json
 import os
 import re
 import time
+from app.core.config import get_settings
 
 try:
     from dotenv import load_dotenv
@@ -11,12 +12,12 @@ except ImportError:  # pragma: no cover - optional dependency guard
     def load_dotenv(*args, **kwargs):
         return None
 
+settings=get_settings()
+#load_dotenv()
 
-load_dotenv()
-
-VLLM_BASE_URL = os.getenv("VLLM_BASE_URL", "http://localhost:8000/v1")
-VLLM_API_KEY = os.getenv("VLLM_API_KEY", "token-abc123")
-VLLM_MODEL = os.getenv("VLLM_MODEL", "Qwen/Qwen2.5-0.5B-Instruct")
+VLLM_BASE_URL = settings.VLLM_BASE_URL
+VLLM_API_KEY = settings.VLLM_API_KEY
+VLLM_MODEL = settings.VLLM_MODEL
 
 GUIDELINES_FOR_LLM_TOP_K = 4
 MAX_GUIDELINE_CHARS = 1200

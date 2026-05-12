@@ -1,57 +1,201 @@
-from typing import List, Dict, Any
-from app.core.config import get_settings
+from pathlib import Path
+from typing import Any, Dict, List
+import re
 
-settings = get_settings()
 
-class DocumentChunker:
-    def __init__(self, chunk_size: int = None, overlap: int = None, separators: List[str] = None):
-        self.chunk_size = chunk_size or settings.CHUNK_SIZE
-        self.overlap = overlap or settings.CHUNK_OVERLAP
-        self.separators = separators or settings.CHUNK_SEPARATORS.split(",")
+MEDICAL_ENTITY_PATTERNS = {
+    "ANATOMY": [
+        "восходящая аорта",
+        "нисходящая аорта",
+        "дуга аорты",
+        "перешеек аорты",
+        "грудная аорта",
+        "брюшная аорта",
+        "аортальный клапан",
+        "левая подключичная артерия",
+        "плечеголовной ствол",
+    ],
+    "DISEASE": [
+        "аневризма",
+        "расслоение",
+        "диссекция",
+        "стеноз",
+        "разрыв",
+        "расширение",
+        "тромбоз",
+    ],
+    "CLINICAL": [
+        "боль в груди",
+        "боль в спине",
+        "боль между лопатками",
+        "одышка",
+        "кашель",
+        "хрипы",
+        "затруднённое дыхание",
+        "ком в горле",
+    ],
+    "TACTIC": [
+        "наблюдение",
+        "кт-контроль",
+        "хирургическое лечение",
+        "эндоваскулярное лечение",
+        "протезирование",
+        "стентирование",
+        "консультация кардиохирурга",
+    ],
+    "GUIDELINE": [
+        "рекомендуется",
+        "показания",
+        "противопоказания",
+        "порог",
+        "норма",
+        "нормальный диаметр",
+        "риск расслоения",
+        "риск разрыва",
+    ],
+}
 
-    def recursive_chunk_text(self, text: str) -> List[str]:
-        #Рекурсивное чанкование с приоритетом сепараторов
-        raw_chunks = []
-        def _split_recursive(current_text: str, sep_idx: int):
-            if len(current_text) <= self.chunk_size:
-                if current_text.strip():
-                    raw_chunks.append(current_text.strip())
-                return
+CLUSTER_PATTERNS = {
+    "thoracic_aorta": [
+        "грудная аорта",
+        "восходящая аорта",
+        "нисходящая аорта",
+        "дуга аорты",
+        "перешеек аорты",
+    ],
+    "abdominal_aorta": [
+        "брюшная аорта",
+        "инфраренальный отдел",
+        "супраренальный отдел",
+    ],
+    "ascending_aorta": [
+        "восходящая аорта",
+        "аортальный клапан",
+        "синусы вальсальвы",
+        "синотубулярное соединение",
+    ],
+    "aortic_arch": [
+        "дуга аорты",
+        "плечеголовной ствол",
+        "левая подключичная артерия",
+        "левая общая сонная артерия",
+    ],
+    "descending_aorta": [
+        "нисходящая аорта",
+        "грудной отдел аорты",
+    ],
+    "aneurysm": [
+        "аневризма",
+        "расширение",
+        "дилатация",
+    ],
+    "dissection": [
+        "расслоение",
+        "диссекция",
+        "ложный просвет",
+        "истинный просвет",
+    ],
+    "stenosis_thrombosis": [
+        "стеноз",
+        "тромбоз",
+        "окклюзия",
+    ],
+    "surgery_indications": [
+        "показания к операции",
+        "хирургическое лечение",
+        "эндоваскулярное лечение",
+        "протезирование",
+        "стентирование",
+        "порог вмешательства",
+    ],
+    "follow_up": [
+        "наблюдение",
+        "кт-контроль",
+        "динамическое наблюдение",
+        "контроль через",
+    ],
+}
 
-            sep = self.separators[sep_idx] if sep_idx < len(self.separators) else ""
-            parts = current_text.split(sep) if sep else list(current_text)
+_TEXT_SPLITTER = None
 
-            merged = ""
-            for part in parts:
-                if len(merged) + len(sep) + len(part) > self.chunk_size and merged:
-                    _split_recursive(merged, sep_idx + 1)
-                    merged = part
-                else:
-                    merged = merged + sep + part if merged else part
 
-            if merged:
-                _split_recursive(merged, sep_idx + 1)
+def get_text_splitter():
+    """Lazy initialization keeps module import fast and prevents side effects."""
+    global _TEXT_SPLITTER
+    if _TEXT_SPLITTER is None:
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-        _split_recursive(text.strip(), 0)
+        _TEXT_SPLITTER = RecursiveCharacterTextSplitter(
+            chunk_size=1000,
+            chunk_overlap=200,
+            length_function=len,
+            is_separator_regex=False,
+        )
+    return _TEXT_SPLITTER
 
-        # Применяем overlap
-        final_chunks = []
-        for i, chunk in enumerate(raw_chunks):
-            if i > 0 and len(raw_chunks[i - 1]) > self.overlap:
-                prefix = raw_chunks[i - 1][-self.overlap:]
-                chunk = prefix + chunk if prefix[-1].isalnum() else prefix + " " + chunk
-            final_chunks.append(chunk)
 
-        return final_chunks
+def assign_clusters_to_text(text: str) -> List[str]:
+    text_lower = text.lower()
+    clusters: List[str] = []
 
-    def build_chunks(self, docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        result = []
-        for doc in docs:
-            pieces = self.recursive_chunk_text(doc["text"])
-            for i, piece in enumerate(pieces):
-                result.append({
-                    "source": doc["source"],
-                    "chunk_id": i,
-                    "text": piece,
-                })
-        return result
+    for cluster_name, patterns in CLUSTER_PATTERNS.items():
+        for pattern in patterns:
+            if pattern.lower() in text_lower:
+                clusters.append(cluster_name)
+                break
+
+    if not clusters:
+        clusters.append("general")
+
+    return clusters
+
+
+def extract_entities_from_text(text: str) -> List[Dict[str, str]]:
+    text_lower = text.lower()
+    entities: List[Dict[str, str]] = []
+
+    for entity_type, terms in MEDICAL_ENTITY_PATTERNS.items():
+        for term in terms:
+            if term in text_lower:
+                entities.append({"name": term, "type": entity_type})
+
+    numeric_patterns = re.findall(
+        r"(?:>=|<=|≥|≤|>|<)?\s?\d+[.,]?\d*\s?(?:мм|см)",
+        text_lower,
+    )
+
+    for value in numeric_patterns:
+        entities.append({"name": value.strip(), "type": "MEASUREMENT"})
+
+    unique = {}
+    for entity in entities:
+        key = (entity["name"], entity["type"])
+        unique[key] = entity
+
+    return list(unique.values())
+
+
+def build_chunks(docs: List[Any]) -> List[Dict[str, Any]]:
+    result: List[Dict[str, Any]] = []
+    split_docs = get_text_splitter().split_documents(docs)
+    source_counters: Dict[str, int] = {}
+
+    for doc in split_docs:
+        source_path = doc.metadata.get("source", "unknown")
+        source = Path(source_path).name
+
+        chunk_id = source_counters.get(source, 0)
+        source_counters[source] = chunk_id + 1
+
+        result.append(
+            {
+                "source": source,
+                "chunk_id": chunk_id,
+                "text": doc.page_content,
+                "metadata": doc.metadata,
+                "clusters": assign_clusters_to_text(doc.page_content),
+                "entities": extract_entities_from_text(doc.page_content),
+            }
+        )
+
+    return result

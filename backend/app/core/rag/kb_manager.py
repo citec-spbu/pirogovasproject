@@ -1,7 +1,7 @@
 from functools import wraps
 from typing import Any, Dict, List
-import asyncio
 import logging
+import threading
 import time
 import traceback
 
@@ -40,8 +40,8 @@ except ImportError:
 
 
 KB_CACHE: Dict[str, Dict[str, Any]] = {}
-KB_CACHE_LOCKS: Dict[str, asyncio.Lock] = {}
-KB_CACHE_LOCK = asyncio.Lock()
+KB_CACHE_LOCKS: Dict[str, threading.Lock] = {}
+KB_CACHE_LOCK = threading.Lock()
 
 logger = logging.getLogger(__name__)
 
@@ -114,11 +114,11 @@ def build_kb(folder_path: str, use_bm25: bool = True) -> Dict[str, Any]:
     return kb
 
 
-async def _get_or_create_lock(docs_path: str) -> asyncio.Lock:
+def _get_or_create_lock(docs_path: str) -> threading.Lock:
     """Get or create a lock for a specific docs_path."""
-    async with KB_CACHE_LOCK:
+    with KB_CACHE_LOCK:
         if docs_path not in KB_CACHE_LOCKS:
-            KB_CACHE_LOCKS[docs_path] = asyncio.Lock()
+            KB_CACHE_LOCKS[docs_path] = threading.Lock()
         return KB_CACHE_LOCKS[docs_path]
 
 
@@ -163,19 +163,16 @@ def initialize_kb(state: Dict[str, Any]) -> Dict[str, Any]:
     use_bm25 = True
 
     try:
-        # Use asyncio.run to handle the lock acquisition
-        lock = asyncio.run(_get_or_create_lock(docs_path))
+        # Get or create lock for this specific docs_path
+        lock = _get_or_create_lock(docs_path)
 
         # Acquire lock for this specific docs_path
-        async def _locked_init():
-            async with lock:
-                if docs_path not in KB_CACHE:
-                    # Double-check after acquiring lock
-                    kb = _initialize_kb_sync(docs_path, use_bm25)
-                    KB_CACHE[docs_path] = kb
-                return KB_CACHE[docs_path]
-
-        kb = asyncio.run(_locked_init())
+        with lock:
+            if docs_path not in KB_CACHE:
+                # Double-check after acquiring lock
+                kb = _initialize_kb_sync(docs_path, use_bm25)
+                KB_CACHE[docs_path] = kb
+            kb = KB_CACHE[docs_path]
 
         if not kb.get("chunks"):
             warnings.append("После разбиения документов не получено ни одного чанка")

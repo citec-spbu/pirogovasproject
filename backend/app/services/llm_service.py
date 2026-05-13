@@ -150,10 +150,11 @@ def call_local_llm(state: Dict[str, Any]) -> Dict[str, Any]:
 
     llm = ChatOpenAI(
         model=VLLM_MODEL,
-        openai_api_base=VLLM_BASE_URL,
-        openai_api_key=VLLM_API_KEY,
+        base_url=VLLM_BASE_URL,
+        api_key=VLLM_API_KEY,
         temperature=0.5,
         max_tokens=5000,
+        timeout=30,
     )
 
     response = llm.invoke(state.get("final_prompt", ""))
@@ -198,7 +199,7 @@ async def process_llm_request(
     }
     return llm_response, trace_data
 
-async def get_structured_answer(llm_response) -> Dict[str, str]:
+async def get_structured_answer(llm_response: Dict[str, str]) -> Dict[str, str]:
     raw_report = llm_response.get("report", "")
     if not raw_report:
         return {"diagnosis": "", "clinical_recommendations": ""}

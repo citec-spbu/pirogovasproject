@@ -15,7 +15,7 @@ from app.services import storage_service
 from app.utils.pdf_generator import generate_pdf_from_html
 from app.utils.html_report_generator import generate_html_report
 
-async def save_report(db: AsyncSession, measurements,input_files,meta, llm_response,trace_data, user_id: int, judge_enabled: bool = False,):
+async def save_report(db: AsyncSession, measurements,input_files,meta, llm_response,trace_data, user_id: int):
     
     settings = get_settings()
     
@@ -28,8 +28,6 @@ async def save_report(db: AsyncSession, measurements,input_files,meta, llm_respo
         input_files=input_files,
         measurements=measurements,
         meta=meta,
-        judge_enabled=judge_enabled,
-        judge_status="queued" if judge_enabled else None,
     )
 
     db.add(report)

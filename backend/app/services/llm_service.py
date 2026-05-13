@@ -199,7 +199,7 @@ async def process_llm_request(
     }
     return llm_response, trace_data
 
-async def get_structured_answer(llm_responce) -> Dict[str, str]:
+async def get_structured_answer(llm_response: Dict[str, str]) -> Dict[str, str]:
     raw_report = llm_response.get("report", "")
     if not raw_report:
         return {"diagnosis": "", "clinical_recommendations": ""}

@@ -3,15 +3,11 @@ from typing import Any, Dict, List, TypedDict
 import json
 import logging
 
-try:
-    from backend.app.core.rag.kb_manager import ingest_request, initialize_kb
-    from backend.app.services.llm_service import build_prompt, call_local_llm, fuse_context
-    from backend.app.core.rag.retriever import retrieve_graph_context
-except ImportError:
-    from kb_manager import ingest_request, initialize_kb
-    from llm_service import build_prompt, call_local_llm, fuse_context
-    from retriever import retrieve_graph_context
+from backend.app.core.rag.kb_manager import ingest_request, initialize_kb
+from backend.app.services.llm_service import build_prompt, call_local_llm, fuse_context
+from backend.app.core.rag.retriever import retrieve_graph_context
 
+logger = logging.getLogger(__name__)
 
 class MedGraphState(TypedDict, total=False):
     query: str
@@ -83,6 +79,7 @@ def export_langsmith_runs(
     runs = client.list_runs(project_name=project_name, limit=limit)
 
     with open(output_path, "w", encoding="utf-8") as file:
+        exported_count=0
         for run in runs:
             data = {
                 "id": str(run.id),
@@ -117,8 +114,6 @@ def run_demo() -> Dict[str, Any]:
     }
 
     result = graph.invoke(initial_state, config=config)
-
-     result = graph.invoke(initial_state, config=config)
 
     warnings = result.get("warnings", [])
     errors = result.get("errors", [])

@@ -36,15 +36,9 @@ async def create_report(
             "anamnesis": medical_text
         }
 
-        ct_images_bytes = await ct_images.read()
-        ct_images_object_key = storage_service.build_object_key(
+        ct_images_object_key = await storage_service.upload_file(
+            file=ct_images,
             prefix=f"reports/{current_user.id}/ct_images",
-            filename=ct_images.filename,
-        )
-        await storage_service.upload_bytes(
-            data=ct_images_bytes,
-            object_key=ct_images_object_key,
-            content_type=ct_images.content_type or "application/zip"
         )
 
         measurements_bytes = await measurements_file.read()

@@ -1,3 +1,3 @@
-def generate_html_report(data, path) -> str:
-    #return output_path
+def generate_html_report(report) -> str:
+    #return html_content
     pass

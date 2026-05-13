@@ -66,6 +66,35 @@ async def upload_file(
         content_type=file.content_type
     )
 
+async def upload_text(
+    text: str,
+    prefix: str,
+    filename: str,
+    content_type: str = "text/plain; charset=utf-8",
+) -> str:
+    data = text.encode("utf-8")
+    object_key = build_object_key(prefix=prefix, filename=filename)
+
+    return await upload_bytes(
+        data=data,
+        object_key=object_key,
+        content_type=content_type
+    )
+
+async def upload_bytes_file(
+    data: bytes,
+    prefix: str,
+    filename: str,
+    content_type: str = "application/octet-stream"
+) -> str:
+    object_key = build_object_key(prefix=prefix, filename=filename)
+
+    return await upload_bytes(
+        data=data,
+        object_key=object_key,
+        content_type=content_type
+)
+
 async def get_object_bytes(object_key: str) -> bytes:
     settings = get_settings()
     client = get_minio_client()
@@ -102,5 +131,5 @@ async def get_presigned_url(object_key: str) -> str:
     return client.presigned_get_object(
         bucket_name=settings.MINIO_BUCKET_NAME,
         object_name=object_key,
-        expires=timedelta(seconds=settings.MINIO_PRESIGNED_URL_EXPIRATION_SECONDS),
+        expires=timedelta(seconds=settings.MINIO_PRESIGNED_EXPIRES_SECONDS),
     )

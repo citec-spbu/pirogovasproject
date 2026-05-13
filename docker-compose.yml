@@ -24,11 +24,11 @@ services:
     image: minio/minio:latest
     container_name: ct_photos_minio
     command: server /data --console-address ":9001"
-    environmentt:
+    environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     volumes:
-      -minio_data:/data
+      - minio_data:/data
     ports:
       - "9000:9000"
       - "9001:9001"

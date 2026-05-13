@@ -1,6 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import uuid
+from typing import List
 
 from app.models.report import Report
 from app.models.user import User
@@ -13,7 +14,6 @@ from app.services import storage_service
 
 from app.utils.pdf_generator import generate_pdf_from_html
 from app.utils.html_report_generator import generate_html_report
-from app.utils.file_handler import save_photo_to_disk
 
 async def save_report(db: AsyncSession, measurements,input_files,meta, llm_response,trace_data, user_id: int):
     
@@ -58,6 +58,15 @@ async def save_report(db: AsyncSession, measurements,input_files,meta, llm_respo
 
     return id_report
 
+async def get_report_by_id(db:AsyncSession, id_report:str) -> Report:
+    result = await db.execute(select(Report).where(Report.id_report == id_report))
+    report = result.scalar_one_or_none()
+
+    if not report:
+        raise ValueError("Report not found")
+
+    return report
+
 async def get_reports_by_login(db: AsyncSession, login: str):
     result = await db.execute(select(User).where(User.login == login))
     user = result.scalar_one_or_none()
@@ -68,17 +77,43 @@ async def get_reports_by_login(db: AsyncSession, login: str):
     reports = result.scalars().all()
     return reports
 
+async def get_reports_by_user_id(
+    db: AsyncSession,
+    user_id: int,
+) -> List[Report]:
+    result = await db.execute(select(Report).where(Report.user_id == user_id))
+    result = result.scalars().all()
+    return result
+
 async def generate_report(db: AsyncSession, id_report: str, output_dir: str = "reports") -> str:
     result = await db.execute(select(Report).where(Report.id_report == id_report))
     report = result.scalar_one_or_none()
+
     if not report:
         raise ValueError("Report not found")
-    html_object_key = generate_html_report(report, output_dir)
-    pdf_object_key = generate_pdf_from_html(html_object_key, output_dir)
+
+    html_content = generate_html_report(report)
+    html_object_key = await storage_service.upload_text(
+        text=html_content,
+        prefix=f"reports/{report.id_report}/result",
+        filename="report.html",
+        content_type="text/html; charset=utf-8",
+    )
+
+    pdf_content = generate_pdf_from_html(html_content)
+    pdf_object_key = await storage_service.upload_bytes_file(
+        data=pdf_content,
+        prefix=f"reports/{report.id_report}/result",
+        filename="report.pdf",
+    )
+
     report.html_object_key = html_object_key
     report.pdf_object_key = pdf_object_key
     report.status = ReportStatus.COMPLETED
+
     await db.commit()
+    await db.refresh(report)
+
     return html_object_key, pdf_object_key
     
 async def add_review(db: AsyncSession, review: ReportReviewUpdate, id_report: str):

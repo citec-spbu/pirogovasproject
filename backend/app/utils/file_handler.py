@@ -5,15 +5,6 @@ import csv
 from io import StringIO
 
 
-def save_photo_to_disk(photo_data: bytes) -> str:
-    """Saves one image file to disk and returns the path"""
-    filename = f"{uuid4()}.jpg"
-    path = os.path.join("uploads", filename)
-    os.makedirs("uploads", exist_ok=True)
-    with open(path, "wb") as f:
-        f.write(photo_data)
-    return path
-
 def extract_images_from_zip(zip_bytes: bytes, filename:str) -> str:
     """Unpacks the ZIP archive and saves all photos to disk"""
     pass

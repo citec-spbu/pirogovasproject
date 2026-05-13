@@ -20,6 +20,13 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
+    MINIO_ENDPOINT: str
+    MINIO_ACCESS_KEY: str
+    MINIO_SECRET_KEY: str
+    MINIO_BUCKET_NAME: str
+    MINIO_SECURE: bool
+    MINIO_PRESIGNED_EXPIRES_SECONDS: int
+
     GUIDELINE_PATHS: Optional[str] = None
 
     CHUNK_SIZE: int = 700

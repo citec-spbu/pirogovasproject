@@ -8,6 +8,7 @@ from app.core.database import get_db
 from app.core.enum.role import UserRole
 from app.core.security import decode_access_token
 from app.models.user import User
+from app.models.report import Report
 
 oauth_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/users/login")
 
@@ -56,3 +57,19 @@ def require_admin(current_user: User = Depends(get_current_active_user)) -> User
             detail="Admin privileges required",
         )
     return current_user
+
+
+def ensure_report_access(
+    current_user: User,
+    report: Report,
+) -> None:
+    if current_user.role == UserRole.ADMIN:
+        return
+    
+    if report.user_id == current_user.id:
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Access denied",
+    )

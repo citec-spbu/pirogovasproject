@@ -1,12 +1,19 @@
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, UploadFile
+from typing import List
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.models.user import User, Organization
+from app.models.report_templates import ReportTemplate
+from app.models.clinical_protocols import ClinicalProtocol
+
 from app.schemas.admin import AdminCreateUser, AdminUserOut, AdminUpdateUser
+from app.schemas.report_template import ReportTemplateCreate
 from app.core.security import get_password_hash, verify_password
 from app.core.enum.role import UserRole
+from app.services import storage_service
+from app.core.enum.clinical_protocol_status import ClinicalProtocolStatus
 
 async def create_user(db: AsyncSession, user_data: AdminCreateUser) -> User:
     result = await db.execute(select(User).where(User.login == user_data.login))
@@ -80,4 +87,65 @@ async def update_user(db: AsyncSession, user_id: int, user_data: AdminUpdateUser
 
     return user
     
+async def create_report_template(
+    db: AsyncSession,
+    template_data: ReportTemplateCreate,
+    user_id: int,
+) -> ReportTemplate:
+    if template_data.is_active:
+        await db.execute(
+            update(ReportTemplate).values(is_active=False)
+        )
     
+    template = ReportTemplate(
+        name=template_data.name,
+        version=template_data.version,
+        description=template_data.description,
+        content=template_data.content,
+        is_active=template_data.is_active,
+        created_by_user_id=user_id,
+    )
+
+    db.add(template)
+    await db.commit()
+    await db.refresh(template)
+
+    return template
+
+async def replace_clinical_protocols(
+    files: List[UploadFile],
+    uploaded_by_user_id: int,
+    db: AsyncSession,
+) -> List[ClinicalProtocol]:
+    old_protocols = (await db.execute(select(ClinicalProtocol))).scalars().all()
+
+    for protocol in old_protocols:
+        if protocol.file_object_key:
+            await storage_service.delete_object(protocol.file_object_key)
+        await db.delete(protocol)
+
+
+    created_protocols = []
+
+    for file in files:
+        object_key = await storage_service.upload_file(
+            file = file,
+            prefix = "clinical_protocols/",
+        )
+
+        protocol = ClinicalProtocol(
+            title = file.filename,
+            file_object_key = object_key,
+            uploaded_by_user_id = uploaded_by_user_id,
+            status = ClinicalProtocolStatus.UPLOADED,
+        )
+
+        db.add(protocol)
+        created_protocols.append(protocol)
+
+    await db.commit()
+
+    for protocol in created_protocols:
+        await db.refresh(protocol)
+    
+    return created_protocols

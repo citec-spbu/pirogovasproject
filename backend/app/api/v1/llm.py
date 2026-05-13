@@ -6,7 +6,7 @@ from app.services.llm_judge_runner import run_llm_judge_for_report
 
 from app.schemas.report import ReportCreateResponse
 from app.core.enum.report_status import ReportStatus
-from app.services import llm_service, report_service
+from app.services import llm_service, report_service, storage_service
 from app.core.database import get_db
 from app.utils import file_handler
 
@@ -40,15 +40,36 @@ async def create_report(
             "anamnesis": medical_text
         }
 
-        ct_zip_bytes = await ct_images.read()
+        ct_images_object_key = await storage_service.upload_file(
+            file=ct_images,
+            prefix=f"reports/{current_user.id}/ct_images",
+        )
+
         measurements_bytes = await measurements_file.read()
+        measurements_object_key = storage_service.build_object_key(
+            prefix=f"reports/{current_user.id}/measurements",
+            filename=measurements_file.filename,
+        )
+        await storage_service.upload_bytes(
+            data=measurements_bytes,
+            object_key=measurements_object_key,
+            content_type=measurements_file.content_type or "application/octet-stream",
+        )
+
+        input_files  = {
+            "ct_images": {
+                "filename": ct_images.filename,
+                "object_key": ct_images_object_key,
+                "content_type": ct_images.content_type or "application/zip",
+            },
+            "measurements": {
+                "filename": measurements_file.filename,
+                "object_key": measurements_object_key,
+                "content_type": measurements_file.content_type or "application/octet-stream",
+            }
+        }
 
         measurements_dict = file_handler.parse_measurements_file(measurements_bytes, measurements_file.filename)
-
-        input_files = {
-        "ct_archive_filename": ct_images.filename,
-        "measurements_filename": measurements_file.filename,
-        }
 
         id_report = await report_service.create_report_entry(db=db, measurements=measurements_dict, input_files=input_files,
                                 meta=meta, user_id=current_user.id, judge_enabled=enable_llm_judge)

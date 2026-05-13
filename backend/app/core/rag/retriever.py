@@ -1,192 +1,497 @@
+from functools import wraps
+from typing import Any, Dict, List, Set
 import re
+import time
+
 import numpy as np
-from typing import List, Dict, Any
-from .embedder import EmbeddingService
-from .graph_builder import _chunk_node_id, normalize_text
-import networkx as nx
-from app.core.config import get_settings
 
-settings = get_settings()
+try:
+    from .bm25_index import _tokenize_bm25
+    from .chunker import CLUSTER_PATTERNS
+    from .embedder import embed_texts
+    from .graph_builder import graph_expand_from_chunks
+except ImportError:
+    from bm25_index import _tokenize_bm25
+    from chunker import CLUSTER_PATTERNS
+    from embedder import embed_texts
+    from graph_builder import graph_expand_from_chunks
 
-class HybridRetriever:
-    #Гибридный поиск: FAISS + BM25 + RRF + CrossEncoder + граф знаний
-    def __init__(self, embedder: EmbeddingService, top_k: int = None,
-                 min_score: float = None, rrf_k: float = None, ce_weight: float = None):
-        self.embedder = embedder
-        self.top_k = top_k if top_k is not None else settings.TOP_K_RETRIEVAL
-        self.min_score = min_score if min_score is not None else settings.MIN_RELEVANCE_SCORE
-        self.rrf_k = rrf_k if rrf_k is not None else settings.RRF_K
-        self.ce_weight = ce_weight if ce_weight is not None else settings.CROSS_ENCODER_WEIGHT
 
-    def _apply_rrf(self, ranks: np.ndarray, target: np.ndarray):
+CROSS_ENCODER_MODEL_NAME = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
+_CROSS_ENCODER = None
+_MORPH = None
+
+SYMPTOM_TOP_K = 4
+JSON_CANDIDATES_TOP_K = 10
+JSON_RESULTS_TOP_K = 5
+GRAPH_EXPAND_TOP_K = 8
+FINAL_GUIDELINES_TOP_K = 4
+
+MIN_JSON_RELEVANCE_SCORE = 3.0
+MIN_FINAL_RELEVANCE_SCORE = 3.0
+
+TRANSLATION_MAP = {
+    "Descending Aorta": "Нисходящая аорта",
+    "Isthmus": "Перешеек аорты",
+    "Arch after LSA": "Дуга аорты после отхождения левой подвключичной артерии",
+    "Arch after TBC": "Дуга аорты после отхождения плечеголовного ствола",
+    "Ascending Aorta befor TBC": "Восходящая аорта перед плечеголовным стволом",
+    "Ascending Aorta": "Восходящая аорта",
+    "max_diam_1": "Максимальные диаметры",
+    "max_diam_2": "Максимальные диаметры",
+    "min_diam": "Минимальный диаметр",
+    "perimetr": "Периметр сосуда",
+    "area": "Площадь поперечного сечения",
+}
+
+
+def track_node_time(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        start = time.perf_counter()
+        result = func(*args, **kwargs)
+        elapsed = time.perf_counter() - start
+        print(f"[{func.__name__}] Выполнено за {elapsed:.3f} сек.")
+        return result
+
+    return wrapper
+
+
+def get_cross_encoder():
+    global _CROSS_ENCODER
+    if _CROSS_ENCODER is None:
+        from sentence_transformers import CrossEncoder
+
+        _CROSS_ENCODER = CrossEncoder(CROSS_ENCODER_MODEL_NAME, device="cpu")
+    return _CROSS_ENCODER
+
+
+def get_morph():
+    global _MORPH
+    if _MORPH is None:
+        import pymorphy3
+
+        _MORPH = pymorphy3.MorphAnalyzer()
+    return _MORPH
+
+
+def _normalize_text(text: str) -> Set[str]:
+    words = re.findall(r"\b[а-яА-ЯёЁa-zA-Z]{3,}\b", text.lower())
+    morph = get_morph()
+    return {morph.parse(word)[0].normal_form for word in words}
+
+
+def _flatten_patient_measurements(patient_data: Dict[str, Any]) -> List[str]:
+    facts: List[str] = []
+
+    if not isinstance(patient_data, dict):
+        return facts
+
+    for zone_key, zone_value in patient_data.items():
+        zone_name = TRANSLATION_MAP.get(zone_key, zone_key)
+
+        if isinstance(zone_value, dict):
+            for metric_key, metric_value in zone_value.items():
+                metric_name = TRANSLATION_MAP.get(metric_key, metric_key)
+
+                if isinstance(metric_value, (int, float)):
+                    facts.append(f"{zone_name} {metric_name} {metric_value} мм")
+                elif isinstance(metric_value, list):
+                    numeric_values = [str(value) for value in metric_value if isinstance(value, (int, float))]
+                    if numeric_values:
+                        facts.append(f"{zone_name} {metric_name} {' '.join(numeric_values)} мм")
+                elif isinstance(metric_value, dict):
+                    for sub_key, sub_value in metric_value.items():
+                        sub_name = TRANSLATION_MAP.get(sub_key, sub_key)
+                        if isinstance(sub_value, (int, float)):
+                            facts.append(f"{zone_name} {metric_name} {sub_name} {sub_value} мм")
+                        elif isinstance(sub_value, list):
+                            numeric_values = [str(value) for value in sub_value if isinstance(value, (int, float))]
+                            if numeric_values:
+                                facts.append(f"{zone_name} {metric_name} {sub_name} {' '.join(numeric_values)} мм")
+        elif isinstance(zone_value, (int, float)):
+            facts.append(f"{zone_name} {zone_value} мм")
+
+    return facts
+
+
+def _collect_json_keywords(patient_data: Dict[str, Any]) -> Set[str]:
+    keywords: Set[str] = set()
+
+    if not isinstance(patient_data, dict):
+        return keywords
+
+    for zone_key, zone_value in patient_data.items():
+        zone_name = TRANSLATION_MAP.get(zone_key, zone_key)
+        keywords.update(_normalize_text(zone_name))
+
+        if isinstance(zone_value, dict):
+            for metric_key in zone_value.keys():
+                metric_name = TRANSLATION_MAP.get(metric_key, metric_key)
+                keywords.update(_normalize_text(metric_name))
+
+    return keywords
+
+
+def _build_json_query(patient_data: Dict[str, Any]) -> str:
+    facts = _flatten_patient_measurements(patient_data)
+
+    base_terms = (
+        "норма аорты нормальный диаметр аневризма расширение "
+        "порог вмешательства показания к операции риск расслоения "
+        "восходящая аорта нисходящая аорта дуга аорты перешеек "
+        "максимальный диаметр минимальный диаметр периметр площадь поперечного сечения "
+        "мм см таблица рекомендации"
+    )
+
+    return f"{base_terms} {' '.join(facts)}".strip()
+
+
+def route_query_to_clusters(
+    query: str,
+    patient_history: str,
+    patient_data: Dict[str, Any],
+) -> List[str]:
+    query_parts = [query, patient_history]
+
+    if isinstance(patient_data, dict):
+        query_parts.append(_build_json_query(patient_data))
+
+    full_query = "\n".join(query_parts).lower()
+    clusters: List[str] = []
+
+    for cluster_name, patterns in CLUSTER_PATTERNS.items():
+        for pattern in patterns:
+            if pattern.lower() in full_query:
+                clusters.append(cluster_name)
+                break
+
+    if not clusters:
+        clusters.append("general")
+
+    return clusters
+
+
+def hybrid_retrieve(query: str, kb: Dict[str, Any], top_k: int) -> List[Dict[str, Any]]:
+    chunks = kb.get("chunks", [])
+    faiss_index = kb.get("faiss_index")
+
+    if faiss_index is None or not chunks:
+        return []
+
+    q_emb = embed_texts([query], is_query=True)
+    if q_emb.size == 0:
+        return []
+
+    k_search = min(len(chunks), max(top_k * 3, top_k))
+    distances, indices = faiss_index.search(q_emb, k_search)
+    vector_ranks = [int(idx) for idx in indices[0] if int(idx) >= 0]
+
+    bm25_ranks = None
+    if kb.get("bm25_index"):
+        q_tokens = _tokenize_bm25(query)
+        bm25_scores = kb["bm25_index"].get_scores(q_tokens)
+        bm25_ranks = np.argsort(bm25_scores)[::-1]
+
+    rrf_scores = np.zeros(len(chunks))
+    k_rrf = 60.0
+
+    def apply_rrf(ranks, target):
         for rank, idx in enumerate(ranks, start=1):
-            target[idx] += 1.0 / (self.rrf_k + rank)
+            if 0 <= int(idx) < len(target):
+                target[int(idx)] += 1.0 / (k_rrf + rank)
 
-    def _apply_json_heuristics(self, candidates: List[Dict[str, Any]], keywords_from_json: set) -> List[Dict[str, Any]]:
-        for c in candidates:
-            chunk_lower = c["text"].lower()
-            chunk_normalized = normalize_text(c["text"])
-            # NER-бонус
-            matches = keywords_from_json.intersection(chunk_normalized)
-            c["score"] += len(matches) * 0.05
-            # Бонус за числовые нормативы
-            numeric_patterns = [
-                r'\d{1,2}(\.\d)?\s?мм',
-                r'[><=]\s?\d{1,2}',
-                r'от\s\d{1,2}\sдо\s\d{1,2}'
-            ]
-            for pattern in numeric_patterns:
-                if re.search(pattern, chunk_lower):
-                    c["score"] += 0.15
-            # Штраф за картинки
-            stop_patterns = ["рис.", "рисунок", "вид сбоку", "снимок", "визуализация", "иллюстрация", "график"]
-            for stop_word in stop_patterns:
-                if stop_word in chunk_lower:
-                    c["score"] -= 0.10
-            # Штраф за ссылки на литературу
-            reference_matches = re.findall(r'\[[\d,\s\-]+\]', chunk_lower)
-            if reference_matches:
-                c["score"] -= len(reference_matches) * 0.005
+    apply_rrf(vector_ranks, rrf_scores)
+    if bm25_ranks is not None:
+        apply_rrf(bm25_ranks, rrf_scores)
 
-        return candidates
+    candidate_indices = np.argsort(rrf_scores)[::-1][: top_k * 3]
+    results: List[Dict[str, Any]] = []
 
-    def hybrid_search(self, query: str, chunks: List[Dict[str, Any]], faiss_index,
-                    bm25_index=None, top_k: int = None) -> List[Dict[str, Any]]:
-        if not chunks or faiss_index is None or faiss_index.ntotal == 0:
-            return []
-        top_k = top_k or self.top_k
-
-        # 1. FAISS cosine similarity
-        q_emb = self.embedder.encode([query], is_query=True)
-        k_search = min(max(len(chunks), top_k * 3), faiss_index.ntotal)
-        cos_scores, cos_indices = faiss_index.search(q_emb, k_search)
-        cos_scores, cos_indices = cos_scores[0], cos_indices[0]
-
-        # Filter out invalid indices from FAISS
-        valid_mask = (cos_indices >= 0) & (cos_indices < len(chunks))
-        cos_indices = cos_indices[valid_mask]
-
-        # 2. BM25
-        bm25_indices = None
-        if bm25_index:
-            from app.core.rag.bm25_index import BM25Manager
-            query_tokens = BM25Manager.tokenize(query)
-            bm25_scores = bm25_index.get_scores(query_tokens)
-            bm25_indices = np.argsort(bm25_scores)[::-1]
-
-            # Filter out invalid indices from BM25
-            valid_mask = (bm25_indices >= 0) & (bm25_indices < len(chunks))
-            bm25_indices = bm25_indices[valid_mask]
-
-        # 3. RRF Fusion
-        rrf_scores = np.zeros(len(chunks))
-        self._apply_rrf(cos_indices, rrf_scores)
-        if bm25_indices is not None and bm25_indices.size > 0:
-            self._apply_rrf(bm25_indices, rrf_scores)
-
-        candidate_indices = np.argsort(rrf_scores)[::-1][:(top_k * 3)]
-        results = []
-        for idx in candidate_indices:
-            idx = int(idx)
-            results.append({
+    for idx in candidate_indices:
+        idx = int(idx)
+        if rrf_scores[idx] <= 0:
+            continue
+        results.append(
+            {
                 "source": chunks[idx]["source"],
                 "chunk_id": chunks[idx]["chunk_id"],
                 "text": chunks[idx]["text"],
                 "index": idx,
                 "score": float(rrf_scores[idx]),
-            })
-        # 4. Cross-Encoder reranking
-        if results:
-            ce_scores = self.embedder.rerank(query, [r["text"] for r in results])
-            for i, r in enumerate(results):
-                r["score"] = (1 - self.ce_weight) * r["score"] + self.ce_weight * float(ce_scores[i])
-        results.sort(key=lambda x: x["score"], reverse=True)
-        for r in results:
-            r.pop("index", None)
+            }
+        )
 
-        return results[:top_k]
+    if results:
+        pairs = [[query, result["text"]] for result in results]
+        ce_scores = get_cross_encoder().predict(pairs, show_progress_bar=False)
+        for i, result in enumerate(results):
+            result["score"] = 0.3 * result["score"] + 0.7 * float(ce_scores[i])
 
-    def graph_expand(self, seed_results: List[Dict[str, Any]], graph, chunks: List[Dict[str, Any]],
-                    max_hops: int = 2, max_graph_chunks: int = 8) -> List[Dict[str, Any]]:
-        if graph is None or not seed_results:
-            return []
-        chunk_lookup = {
-            (chunk["source"], chunk["chunk_id"]): chunk
-            for chunk in chunks
+    results.sort(key=lambda item: item["score"], reverse=True)
+    for result in results:
+        result.pop("index", None)
+
+    return results[:top_k]
+
+
+def hybrid_retrieve_from_clusters(
+    query: str,
+    kb: Dict[str, Any],
+    target_clusters: List[str],
+    top_k: int,
+) -> List[Dict[str, Any]]:
+    cluster_indexes = kb.get("cluster_indexes", {})
+
+    if not target_clusters or "general" in target_clusters:
+        return hybrid_retrieve(query, kb, top_k)
+
+    all_results: List[Dict[str, Any]] = []
+
+    for cluster in target_clusters:
+        cluster_kb = cluster_indexes.get(cluster)
+        if not cluster_kb:
+            continue
+
+        cluster_results = hybrid_retrieve(
+            query=query,
+            kb=cluster_kb,
+            top_k=top_k,
+        )
+
+        for result in cluster_results:
+            result["matched_cluster"] = cluster
+
+        all_results.extend(cluster_results)
+
+    if not all_results:
+        return hybrid_retrieve(query, kb, top_k)
+
+    seen: Dict[Any, Dict[str, Any]] = {}
+    for item in all_results:
+        key = (item["source"], item["chunk_id"])
+        if key not in seen or item["score"] > seen[key]["score"]:
+            seen[key] = item
+
+    results = list(seen.values())
+    results.sort(key=lambda item: item["score"], reverse=True)
+    return results[:top_k]
+
+
+def _apply_json_heuristics(
+    candidates: List[Dict[str, Any]],
+    keywords_from_json: Set[str],
+) -> List[Dict[str, Any]]:
+    for candidate in candidates:
+        chunk_lower = candidate["text"].lower()
+        chunk_normalized = _normalize_text(candidate["text"])
+
+        matches = keywords_from_json.intersection(chunk_normalized)
+        candidate["score"] += len(matches) * 0.05
+
+        numeric_patterns = [
+            r"\d{1,2}(\.\d)?\s?мм",
+            r"[><=]\s?\d{1,2}",
+            r"от\s\d{1,2}\sдо\s\d{1,2}",
+        ]
+        for pattern in numeric_patterns:
+            if re.search(pattern, chunk_lower):
+                candidate["score"] += 0.15
+
+        stop_patterns = [
+            "рис.",
+            "рисунок",
+            "вид сбоку",
+            "снимок",
+            "визуализация",
+            "иллюстрация",
+            "график",
+        ]
+        for stop_word in stop_patterns:
+            if stop_word in chunk_lower:
+                candidate["score"] -= 0.10
+
+        reference_matches = re.findall(r"\[[\d,\s\-]+\]", chunk_lower)
+        if reference_matches:
+            candidate["score"] -= len(reference_matches) * 0.005
+
+    return candidates
+
+
+def merge_retrieval_results(
+    vector_results: List[Dict[str, Any]],
+    graph_results: List[Dict[str, Any]],
+    final_top_k: int = FINAL_GUIDELINES_TOP_K,
+) -> List[Dict[str, Any]]:
+    merged: Dict[Any, Dict[str, Any]] = {}
+
+    for item in vector_results:
+        key = (item["source"], item["chunk_id"])
+        merged[key] = {
+            **item,
+            "vector_score": item.get("score", 0.0),
+            "graph_score": 0.0,
+            "final_score": item.get("score", 0.0),
+            "retrieval_type": "vector",
         }
-        graph_candidates = {}
-        for result in seed_results:
-            source = result["source"]
-            chunk_id = result["chunk_id"]
-            seed_node = _chunk_node_id(source, chunk_id)
 
-            if seed_node not in graph:
-                continue
+    for item in graph_results:
+        key = (item["source"], item["chunk_id"])
 
-            lengths = nx.single_source_shortest_path_length(graph, seed_node, cutoff=max_hops)
-
-            for node, distance in lengths.items():
-                if not node.startswith("chunk::"):
-                    continue
-
-                node_data = graph.nodes[node]
-                candidate_key = (node_data["source"], node_data["chunk_id"])
-
-                if candidate_key not in chunk_lookup:
-                    continue
-
-                graph_score = 1.0 / (1.0 + distance)
-
-                if candidate_key not in graph_candidates:
-                    chunk = chunk_lookup[candidate_key]
-                    graph_candidates[candidate_key] = {
-                        "source": chunk["source"],
-                        "chunk_id": chunk["chunk_id"],
-                        "text": chunk["text"],
-                        "score": graph_score,
-                        "graph_score": graph_score,
-                        "graph_path": f"graph_distance={distance}",
-                    }
-                else:
-                    graph_candidates[candidate_key]["score"] += graph_score
-                    graph_candidates[candidate_key]["graph_score"] += graph_score
-
-        results = list(graph_candidates.values())
-        results.sort(key=lambda x: x["score"], reverse=True)
-        return results[:max_graph_chunks]
-
-    def merge_results(self, vector_results: List[Dict[str, Any]], graph_results: List[Dict[str, Any]],
-                      final_top_k: int = 8) -> List[Dict[str, Any]]:
-        merged = {}
-        for item in vector_results:
-            key = (item["source"], item["chunk_id"])
+        if key in merged:
+            merged[key]["graph_score"] = item.get("graph_score", item.get("score", 0.0))
+            merged[key]["graph_path"] = item.get("graph_path", "")
+            merged[key]["retrieval_type"] = "vector+graph"
+            merged[key]["final_score"] = (
+                0.65 * merged[key].get("vector_score", 0.0)
+                + 0.35 * merged[key].get("graph_score", 0.0)
+            )
+        else:
             merged[key] = {
                 **item,
-                "vector_score": item.get("score", 0.0),
-                "graph_score": 0.0,
-                "final_score": item.get("score", 0.0),
-                "retrieval_type": "vector",
+                "vector_score": 0.0,
+                "graph_score": item.get("graph_score", item.get("score", 0.0)),
+                "final_score": 0.35 * item.get("score", 0.0),
+                "retrieval_type": "graph",
             }
 
-        for item in graph_results:
-            key = (item["source"], item["chunk_id"])
-            if key in merged:
-                merged[key]["graph_score"] = item.get("graph_score", item.get("score", 0.0))
-                merged[key]["graph_path"] = item.get("graph_path", "")
-                merged[key]["retrieval_type"] = "vector+graph"
-                merged[key]["final_score"] = (
-                        0.65 * merged[key].get("vector_score", 0.0) +
-                        0.35 * merged[key].get("graph_score", 0.0)
-                )
-            else:
-                merged[key] = {
-                    **item,
-                    "vector_score": 0.0,
-                    "graph_score": item.get("graph_score", item.get("score", 0.0)),
-                    "final_score": 0.35 * item.get("score", 0.0),
-                    "retrieval_type": "graph",
-                }
+    results = list(merged.values())
+    results.sort(key=lambda item: item["final_score"], reverse=True)
 
-        results = list(merged.values())
-        results.sort(key=lambda x: x["final_score"], reverse=True)
-        return results[:final_top_k]
+    # Filter by MIN_FINAL_RELEVANCE_SCORE
+    filtered_results = [
+        result for result in results
+        if result["final_score"] >= MIN_FINAL_RELEVANCE_SCORE
+    ]
+
+    return filtered_results[:final_top_k]
+
+
+@track_node_time
+def retrieve_graph_context(state: Dict[str, Any]) -> Dict[str, Any]:
+    try:
+        from .kb_manager import KB_CACHE
+    except ImportError:
+        from kb_manager import KB_CACHE
+
+    warnings = list(state.get("warnings", []))
+    paths = state.get("guideline_paths", [])
+
+    if not paths:
+        return {
+            **state,
+            "retrieved_guidelines": [],
+            "warnings": warnings + ["Не переданы пути к гайдлайнам"],
+        }
+
+    docs_path = paths[0]
+    kb = KB_CACHE.get(docs_path)
+
+    if kb is None:
+        return {
+            **state,
+            "retrieved_guidelines": [],
+            "warnings": warnings + ["KB не инициализирована"],
+        }
+
+    patient_data = state.get("patient_data", {})
+    symptom_query = (
+        f"{state.get('query', '')}\n"
+        f"{state.get('patient_history', '')}"
+    ).strip()
+
+    target_clusters = route_query_to_clusters(
+        query=state.get("query", ""),
+        patient_history=state.get("patient_history", ""),
+        patient_data=patient_data,
+    )
+
+    symptom_results = hybrid_retrieve_from_clusters(
+        query=symptom_query,
+        kb=kb,
+        target_clusters=target_clusters,
+        top_k=SYMPTOM_TOP_K,
+    )
+
+    json_query = ""
+    keywords_from_json: Set[str] = set()
+
+    if patient_data and isinstance(patient_data, dict):
+        json_query = _build_json_query(patient_data)
+        keywords_from_json = _collect_json_keywords(patient_data)
+
+    json_candidates = (
+        hybrid_retrieve_from_clusters(
+            query=json_query,
+            kb=kb,
+            target_clusters=target_clusters,
+            top_k=JSON_CANDIDATES_TOP_K,
+        )
+        if json_query
+        else []
+    )
+    json_candidates = _apply_json_heuristics(json_candidates, keywords_from_json)
+
+    for candidate in json_candidates:
+        chunk_lower = candidate["text"].lower()
+
+        if any(
+            term in chunk_lower
+            for term in [
+                "норма",
+                "нормаль",
+                "аневризм",
+                "порог",
+                "рекомендуется",
+                "диаметр",
+                "расслоени",
+                "разрыв",
+                "вмешательств",
+                "таблица",
+            ]
+        ):
+            candidate["score"] += 0.20
+
+        if re.search(r"(>=|<=|≤|≥|>|<)\s?\d+[.,]?\d*\s?(мм|см)", chunk_lower):
+            candidate["score"] += 0.25
+
+        if re.search(r"\d+[.,]?\d*\s?(мм|см)", chunk_lower):
+            candidate["score"] += 0.10
+
+    json_candidates = [
+        candidate
+        for candidate in json_candidates
+        if candidate["score"] >= MIN_JSON_RELEVANCE_SCORE
+    ]
+    json_candidates.sort(key=lambda item: item["score"], reverse=True)
+    json_results = json_candidates[:JSON_RESULTS_TOP_K]
+
+    vector_results: List[Dict[str, Any]] = []
+    seen = set()
+    for item in symptom_results + json_results:
+        key = (item["source"], item["chunk_id"])
+        if key not in seen:
+            seen.add(key)
+            vector_results.append(item)
+
+    graph_results = graph_expand_from_chunks(
+        seed_results=vector_results,
+        kb=kb,
+        max_hops=2,
+        max_graph_chunks=GRAPH_EXPAND_TOP_K,
+    )
+
+    final_guidelines = merge_retrieval_results(
+        vector_results=vector_results,
+        graph_results=graph_results,
+        final_top_k=FINAL_GUIDELINES_TOP_K,
+    )
+
+    if not final_guidelines:
+        warnings.append("Ретривер не нашёл релевантных фрагментов")
+
+    return {
+        **state,
+        "retrieved_guidelines": final_guidelines,
+        "warnings": warnings,
+    }

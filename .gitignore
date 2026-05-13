@@ -1,6 +1,10 @@
 .venv
 venv
 .env
+.env.*
 __pycache__/
 .obsidian
 Проект Клиники Пирогова.txt
+.kb_cache/
+.kb_cache_bm25/
+.kb_cache_graph/

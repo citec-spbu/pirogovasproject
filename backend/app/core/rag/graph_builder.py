@@ -1,132 +1,156 @@
-import re
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 import pickle
+
 import networkx as nx
-import pymorphy3
-from app.core.config import get_settings
 
-settings = get_settings()
+try:
+    from .chunker import extract_entities_from_text
+except ImportError:
+    from chunker import extract_entities_from_text
 
-# Module-level singleton for morphological analysis
-_morph = pymorphy3.MorphAnalyzer()
 
-def normalize_text(text: str) -> set:
-    """Лемматизация текста для нормализации ключевых слов."""
-    words = re.findall(r'\b[а-яА-ЯёЁa-zA-Z]{3,}\b', text.lower())
-    return {_morph.parse(w)[0].normal_form for w in words}
-
-# Медицинские паттерны для извлечения сущностей
-MEDICAL_ENTITY_PATTERNS = {
-    "ANATOMY": [
-        "восходящая аорта", "нисходящая аорта", "дуга аорты", "перешеек аорты",
-        "грудная аорта", "брюшная аорта", "аортальный клапан",
-        "левая подключичная артерия", "плечеголовной ствол",
-    ],
-    "DISEASE": [
-        "аневризма", "расслоение", "диссекция", "стеноз",
-        "разрыв", "расширение", "тромбоз",
-    ],
-    "CLINICAL": [
-        "боль в груди", "боль в спине", "боль между лопатками",
-        "одышка", "кашель", "хрипы", "затруднённое дыхание", "ком в горле",
-    ],
-    "TACTIC": [
-        "наблюдение", "кт-контроль", "хирургическое лечение",
-        "эндоваскулярное лечение", "протезирование", "стентирование",
-        "консультация кардиохирурга",
-    ],
-    "GUIDELINE": [
-        "рекомендуется", "показания", "противопоказания", "порог",
-        "норма", "нормальный диаметр", "риск расслоения", "риск разрыва",
-    ],
-}
-
+KB_GRAPH_DISK_CACHE_DIR = Path(".kb_cache_graph")
 def _entity_node_id(entity: Dict[str, str]) -> str:
     return f"entity::{entity['type']}::{entity['name']}"
+
 
 def _chunk_node_id(source: str, chunk_id: int) -> str:
     return f"chunk::{source}::{chunk_id}"
 
-def extract_entities_from_text(text: str) -> List[Dict[str, str]]:
-    """Извлекает медицинские сущности и измерения из текста."""
-    text_lower = text.lower()
-    entities = []
 
-    # Поиск по паттернам
-    for entity_type, terms in MEDICAL_ENTITY_PATTERNS.items():
-        for term in terms:
-            if term in text_lower:
-                entities.append({"name": term, "type": entity_type})
+def get_graph_cache_path(folder_path: str) -> Path:
+    safe_name = Path(folder_path).name.replace(" ", "_")
+    return KB_GRAPH_DISK_CACHE_DIR / f"{safe_name}_graph.pkl"
 
-    # Поиск числовых измерений
-    numeric_patterns = re.findall(
-        r'(?:>=|<=|≥|≤|>|<)?\s?\d+[.,]?\d*\s?(?:мм|см)',
-        text_lower
-    )
-    for value in numeric_patterns:
-        entities.append({"name": value.strip(), "type": "MEASUREMENT"})
 
-    # Уникализация
-    unique = {}
-    for e in entities:
-        key = (e["name"], e["type"])
-        unique[key] = e
-    return list(unique.values())
+def save_graph_to_disk(folder_path: str, graph: nx.Graph) -> None:
+    path = get_graph_cache_path(folder_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "wb") as file:
+        pickle.dump(graph, file)
 
-class KnowledgeGraphBuilder:
-    def __init__(self, cache_dir: str = None):
-        self.cache_dir = Path(cache_dir or settings.KB_CACHE_GRAPH_ROOT)
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
 
-    def build(self, chunks: List[Dict[str, Any]]) -> nx.Graph:
-        #Строит граф знаний из списка чанков
-        graph = nx.Graph()
+def load_graph_from_disk(folder_path: str) -> Optional[nx.Graph]:
+    path = get_graph_cache_path(folder_path)
+    if not path.exists():
+        return None
 
-        for idx, chunk in enumerate(chunks):
-            source = chunk["source"]
-            chunk_id = chunk["chunk_id"]
-            text = chunk["text"]
+    with open(path, "rb") as file:
+        return pickle.load(file)
 
-            chunk_node = _chunk_node_id(source, chunk_id)
-            graph.add_node(chunk_node, node_type="CHUNK", source=source,
-                           chunk_id=chunk_id, text=text, index=idx)
 
-            # Добавляем сущности и связи
-            entities = extract_entities_from_text(text)
-            for entity in entities:
-                entity_node = _entity_node_id(entity)
-                graph.add_node(
-                    entity_node,
-                    node_type="ENTITY",
-                    entity_type=entity["type"],
-                    name=entity["name"],
-                )
-                graph.add_edge(chunk_node, entity_node, relation="MENTIONS", weight=1.0)
+def build_knowledge_graph(chunks: List[Dict[str, Any]]) -> nx.Graph:
+    graph = nx.Graph()
 
-            # Связываем сущности внутри чанка
-            for i in range(len(entities)):
-                for j in range(i + 1, len(entities)):
-                    e1 = _entity_node_id(entities[i])
-                    e2 = _entity_node_id(entities[j])
-                    if graph.has_edge(e1, e2):
-                        graph[e1][e2]["weight"] += 1.0
-                    else:
-                        graph.add_edge(e1, e2, relation="CO_OCCURS", weight=1.0)
+    for idx, chunk in enumerate(chunks):
+        source = chunk["source"]
+        chunk_id = chunk["chunk_id"]
+        text = chunk["text"]
+        chunk_node = _chunk_node_id(source, chunk_id)
 
-        return graph
+        graph.add_node(
+            chunk_node,
+            node_type="CHUNK",
+            source=source,
+            chunk_id=chunk_id,
+            text=text,
+            index=idx,
+        )
 
-    def save_graph(self, graph: nx.Graph, folder_path: str) -> Path:
-        safe_name = Path(folder_path).name.replace(" ", "_")
-        path = self.cache_dir / f"{safe_name}_graph.pkl"
-        with open(path, "wb") as f:
-            pickle.dump(graph, f)
-        return path
+        entities = extract_entities_from_text(text)
 
-    def load_graph(self, folder_path: str) -> Optional[nx.Graph]:
-        safe_name = Path(folder_path).name.replace(" ", "_")
-        path = self.cache_dir / f"{safe_name}_graph.pkl"
-        if not path.exists():
-            return None
-        with open(path, "rb") as f:
-            return pickle.load(f)
+        for entity in entities:
+            entity_node = _entity_node_id(entity)
+            graph.add_node(
+                entity_node,
+                node_type="ENTITY",
+                entity_type=entity["type"],
+                name=entity["name"],
+            )
+            graph.add_edge(
+                chunk_node,
+                entity_node,
+                relation="MENTIONS",
+                weight=1.0,
+            )
+
+        for i in range(len(entities)):
+            for j in range(i + 1, len(entities)):
+                e1 = _entity_node_id(entities[i])
+                e2 = _entity_node_id(entities[j])
+
+                if graph.has_edge(e1, e2):
+                    graph[e1][e2]["weight"] += 1.0
+                else:
+                    graph.add_edge(
+                        e1,
+                        e2,
+                        relation="CO_OCCURS",
+                        weight=1.0,
+                    )
+
+    return graph
+
+
+def graph_expand_from_chunks(
+    seed_results: List[Dict[str, Any]],
+    kb: Dict[str, Any],
+    max_hops: int = 2,
+    max_graph_chunks: int = 4,
+) -> List[Dict[str, Any]]:
+    graph = kb.get("knowledge_graph")
+    chunks = kb.get("chunks", [])
+
+    if graph is None or not seed_results:
+        return []
+
+    chunk_lookup = {
+        (chunk["source"], chunk["chunk_id"]): chunk
+        for chunk in chunks
+    }
+    graph_candidates: Dict[Any, Dict[str, Any]] = {}
+
+    for result in seed_results:
+        source = result["source"]
+        chunk_id = result["chunk_id"]
+        seed_node = _chunk_node_id(source, chunk_id)
+
+        if seed_node not in graph:
+            continue
+
+        lengths = nx.single_source_shortest_path_length(
+            graph,
+            seed_node,
+            cutoff=max_hops,
+        )
+
+        for node, distance in lengths.items():
+            if not str(node).startswith("chunk::"):
+                continue
+
+            node_data = graph.nodes[node]
+            candidate_key = (node_data["source"], node_data["chunk_id"])
+
+            if candidate_key not in chunk_lookup:
+                continue
+
+            graph_score = 1.0 / (1.0 + distance)
+
+            if candidate_key not in graph_candidates:
+                chunk = chunk_lookup[candidate_key]
+                graph_candidates[candidate_key] = {
+                    "source": chunk["source"],
+                    "chunk_id": chunk["chunk_id"],
+                    "text": chunk["text"],
+                    "score": graph_score,
+                    "graph_score": graph_score,
+                    "graph_path": f"graph_distance={distance}",
+                }
+            else:
+                graph_candidates[candidate_key]["score"] += graph_score
+                graph_candidates[candidate_key]["graph_score"] += graph_score
+
+    results = list(graph_candidates.values())
+    results.sort(key=lambda item: item["score"], reverse=True)
+    return results[:max_graph_chunks]

@@ -70,20 +70,31 @@ async def create_report(
         }
 
         measurements_dict = file_handler.parse_measurements_file(measurements_bytes, measurements_file.filename)
-
-        id_report = await report_service.create_report_entry(db=db, measurements=measurements_dict, input_files=input_files,
-                                meta=meta, user_id=current_user.id, judge_enabled=enable_llm_judge)
-
         llm_response, trace_data = await llm_service.process_llm_request(patient_data=measurements_dict, medical_text=medical_text)
+
+        # Capture warnings/errors from llm_response
         trace_data.update({
             "warnings": llm_response.get("warnings", []),
             "errors": llm_response.get("errors", [])
         })
 
-        await report_service.save_report_after_answer(db=db, id_report=id_report, llm_response=llm_response.get("report"), trace_data=trace_data)
+        id_report = await report_service.save_report(
+        db=db,
+        measurements=measurements_dict,
+        input_files=input_files,
+        meta=meta,
+        llm_response=llm_response.get("report"),
+        trace_data=trace_data,
+        user_id=current_user.id,
+        judge_enabled=enable_llm_judge,
+        )
 
         if enable_llm_judge:
-            background_tasks.add_task(run_llm_judge_for_report, id_report, current_user.id)
+            background_tasks.add_task(
+                run_llm_judge_for_report,
+                id_report,
+                current_user.id,
+            )
 
         return ReportCreateResponse(
             id_report=id_report,

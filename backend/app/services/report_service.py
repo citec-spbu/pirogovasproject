@@ -15,53 +15,50 @@ from app.services import storage_service
 from app.utils.pdf_generator import generate_pdf_from_html
 from app.utils.html_report_generator import generate_html_report
 
-async def create_report_entry(db: AsyncSession, measurements: dict, input_files: dict, meta: dict, user_id: int, judge_enabled: bool = False) -> str:
+async def save_report(db: AsyncSession, measurements,input_files,meta, llm_response,trace_data, user_id: int, judge_enabled: bool = False,):
+    
+    settings = get_settings()
+    
     id_report = str(uuid.uuid4())
     report = Report(
         id_report=id_report,
         user_id=user_id,
-        status=ReportStatus.PROCESSING,
+        llm_response=llm_response,
+        status =ReportStatus.PROCESSING,
         input_files=input_files,
         measurements=measurements,
         meta=meta,
         judge_enabled=judge_enabled,
         judge_status="queued" if judge_enabled else None,
     )
+
     db.add(report)
-    await db.commit()
-    await db.refresh(report)
-    return id_report
+    await db.flush()
 
-async def save_report_after_answer(db: AsyncSession, id_report: str, llm_response: dict, trace_data: dict) -> None:
-    settings = get_settings()
-    result = await db.execute(select(Report).where(Report.id_report == id_report))
-    report = result.scalar_one_or_none()
-    if not report:
-        raise ValueError(f"Report {id_report} not found")
 
-    report.llm_response = llm_response
     has_errors = bool((trace_data or {}).get("errors"))
-    if not has_errors:
-        report.status = ReportStatus.PROCESSING
-
     llm_call = LLMCall(
         report_id=report.id,
-        user_id=report.user_id,
+        user_id=user_id,
         status=CallStatus.FAILED if has_errors else CallStatus.COMPLETED,
         call_type=CallType.REPORT_GENERATION,
         provider="vllm",
         model=settings.VLLM_MODEL,
-        prompt=report.meta.get("anamnesis", ""),
+        prompt=meta.get("anamnesis", ""),
         input_json={
-            "measurements": report.measurements,
-            "meta": report.meta,
+            "measurements": measurements,
+            "meta": meta,
         },
         output_json=llm_response,
         trace_json=trace_data,
     )
     db.add(llm_call)
+
     await db.commit()
     await db.refresh(report)
+    await db.refresh(llm_call)
+
+    return id_report
 
 async def get_report_by_id(db:AsyncSession, id_report:str) -> Report:
     result = await db.execute(select(Report).where(Report.id_report == id_report))

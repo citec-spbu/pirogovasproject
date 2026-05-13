@@ -103,7 +103,7 @@ async def create_report_template(
         description=template_data.description,
         content=template_data.content,
         is_active=template_data.is_active,
-        created_by=user_id,
+        created_by_user_id=user_id,
     )
 
     db.add(template)

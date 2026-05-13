@@ -8,7 +8,6 @@ from app.services import report_service, storage_service
 from app.core.database import get_db
 from app.api.dependencies import get_current_user, require_admin, ensure_report_access
 from app.models.user import User
-from app.api.dependencies import ensure_report_access
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 

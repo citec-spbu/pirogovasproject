@@ -48,8 +48,10 @@ async def make_report(
         
         html_path, pdf_path = await report_service.generate_report(db, id_report)
         return {"html_path": html_path, "pdf_path": pdf_path}
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     
 @router.post("/{id_report}/add_review")
 async def add_review(
@@ -63,8 +65,10 @@ async def add_review(
         await report_service.add_review(db, review, id_report)
 
         return {"message": "Review added successfully"}
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
 
 
 # View HTML report
@@ -87,8 +91,10 @@ async def get_html_report(
             content=html_bytes,
             media_type="text/html; charset=utf-8",
             )
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
 
 # Download PDF report
 @router.get("/{id_report}/pdf-url")
@@ -106,7 +112,8 @@ async def get_pdf_report_url(
         
         url = await storage_service.get_presigned_url(report.pdf_object_key)
         return {"url": url}
-
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
         

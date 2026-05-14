@@ -13,9 +13,9 @@ from app.services import llm_service, report_service
 
 @celery_app.task(name="reports.generate_report", bind=True)
 def generate_report_task(self, report_id: int, llm_call_id: int) -> dict:
-    return asyncio.run(_generate_report(report_id, llm_call_id))
+    return asyncio.run(_generate_report(report_id, llm_call_id, self.request.id))
 
-async def _generate_report(report_id: int, llm_call_id: int) -> dict:
+async def _generate_report(report_id: int, llm_call_id: int, task_id: int) -> dict:
     async with AsyncSessionLocal() as db:
         report = await _get_report(db, report_id)
         llm_call = await _get_llm_call(db, llm_call_id)
@@ -37,7 +37,7 @@ async def _generate_report(report_id: int, llm_call_id: int) -> dict:
             trace_data.update({
                 "warnings": llm_response.get("warnings", []),
                 "errors": llm_response.get("errors", []),
-                "celery_task_id": self.request.id if hasattr(self, "request") else None,
+                "celery_task_id": task_id,
             })
 
             has_errors = bool(trace_data.get(("errors")))
@@ -69,7 +69,7 @@ async def _generate_report(report_id: int, llm_call_id: int) -> dict:
         except Exception as e:
             report.status = ReportStatus.FAILED
             report.error_message = str(e)
-            report.generation_completed_at = datetine.now(timezone.utc)
+            report.generation_completed_at = datetime.now(timezone.utc)
             
             llm_call.status = CallStatus.FAILED
             llm_call.error_message = str(e)

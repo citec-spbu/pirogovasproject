@@ -1,7 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import uuid
-from typing import List
+from typing import List, Optional
 
 from app.models.report import Report
 from app.models.user import User

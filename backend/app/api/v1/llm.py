@@ -70,7 +70,7 @@ async def create_report(
         
         report, llm_call = await report_service.create_queued_report(
             db=db,
-            measuremrnts=measurements_dict,
+            measurements=measurements_dict,
             input_files = input_files,
             meta = meta,
             user_id = current_user.id,

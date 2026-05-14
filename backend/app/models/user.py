@@ -16,7 +16,7 @@ class User(Base):
 
     role = Column(Enum(UserRole, name= "user_role"), nullable=False, default=UserRole.USER)
 
-    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+    organization_name = Column(String, ForeignKey("organizations.name"), nullable=False)
     login = Column(String, unique=True,index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     name = Column(String, nullable=False)

@@ -42,7 +42,7 @@ async def bootstrap_first_admin(db: AsyncSession) -> None:
         login=get_settings().FIRST_ADMIN_LOGIN,
         hashed_password=get_password_hash(get_settings().FIRST_ADMIN_PASSWORD),
         role=UserRole.ADMIN,
-        organization_id=organization.id,
+        organization_name=organization.name,
         name = get_settings().FIRST_ADMIN_NAME,
         surname = get_settings().FIRST_ADMIN_SURNAME,
         patronymic = get_settings().FIRST_ADMIN_PATRONYMIC,

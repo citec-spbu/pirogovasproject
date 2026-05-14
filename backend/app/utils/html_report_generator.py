@@ -134,7 +134,7 @@ def _normalize_llm_response(value: Any) -> str:
     if isinstance(value, dict):
         parts = []
         for key, item in value.items():
-            parts.append(f"{key}: {items}")
+            parts.append(f"{key}: {item}")
         return "\n\n".join(parts)
     
     return str(value)
@@ -148,7 +148,7 @@ def generate_html_report(report, template_content: Optional[str] = None) -> str:
     llm_response = _normalize_llm_response(report.llm_response)
     
     return template.render(
-        meta=meat,
+        meta=meta,
         measurements=measurements,
         llm_response = llm_response,
         report=report,

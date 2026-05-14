@@ -1,4 +1,4 @@
-import subproccess
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -8,7 +8,7 @@ def generate_pdf_from_html(html_content: str) -> bytes:
         raise ValueError("HTML content is empty")
     
     with tempfile.TemporaryDirectory() as temp_dir:
-        temp_path = Path(tem_dir)
+        temp_path = Path(temp_dir)
         html_path = temp_path / "report.html"
         pdf_path = temp_path / "report.pdf"
 
@@ -24,7 +24,7 @@ def generate_pdf_from_html(html_content: str) -> bytes:
             "title=CT report",
         ]
 
-        result = subproccess.run(
+        result = subprocess.run(
             command,
             capture_output=True,
             text=True,
@@ -37,4 +37,4 @@ def generate_pdf_from_html(html_content: str) -> bytes:
         if not pdf_path.exists():
             raise RuntimeError("Pandoc did not create PDF file")
     
-    return pdf_path.read_bytes()
+        return pdf_path.read_bytes()

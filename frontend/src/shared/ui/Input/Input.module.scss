@@ -1,0 +1,101 @@
+.wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+  }
+  
+  .field {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+  }
+  
+  .input {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid transparent;
+    border-radius: 16px;
+    background: #f7f7f7;
+    color: #1f1f1f;
+    font-family: 'OpenSans', sans-serif;
+    font-size: 16px;
+    font-weight: 400;
+    outline: none;
+  }
+  
+  .input:focus {
+    border-color: #18becd;
+  }
+  
+  .defaultLabel {
+    margin-bottom: 12px;
+    font-family: 'OpenSans', sans-serif;
+    font-size: 18px;
+    font-weight: 400;
+    line-height: 24px;
+    color: #000000;
+  }
+  
+  .default .input {
+    min-height: 40px;
+    padding: 0 28px;
+    border-radius: 24px;
+    background: #e9e9e9;
+    font-size: 18px;
+    color: #6d7684;
+  }
+  
+  .input::placeholder {
+    color: #8c929b;
+  }
+  
+  
+  .floating .input {
+    padding: 26px 20px 10px;
+  }
+  
+  .floatingLabel {
+    position: absolute;
+    left: 20px;
+    top: 17px;
+    font-family: 'OpenSans', sans-serif;
+    font-size: 16px;
+    font-weight: 400;
+    color: #1f1f1f;
+    pointer-events: none;
+    transition:
+      top 0.2s ease,
+      font-size 0.2s ease,
+      color 0.2s ease;
+  }
+  
+  .floating .input:focus + .floatingLabel,
+  .floating .input:not(:placeholder-shown) + .floatingLabel {
+    top: 8px;
+    font-size: 12px;
+    color: #8a8a8a;
+  }
+  
+  .error .input {
+    border-color: #d84c4c;
+  }
+  
+  .errorText {
+    font-family: 'OpenSans', sans-serif;
+    font-size: 12px;
+    color: #d84c4c;
+  }
+  
+//   .eyeBtn {
+//     position: absolute;
+//     top: 50%;
+//     right: 14px;
+//     transform: translateY(-50%);
+//     border: none;
+//     background: transparent;
+//     cursor: pointer;
+//     font-size: 16px;
+//     padding: 0;
+//   }

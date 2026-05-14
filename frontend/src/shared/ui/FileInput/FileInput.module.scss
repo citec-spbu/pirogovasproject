@@ -1,0 +1,60 @@
+.wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  
+  .label {
+    margin: 0;
+    font-size: 20px;
+    line-height: 1.2;
+    color: #000000;
+  }
+  
+  .fileButton {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    width: fit-content;
+    cursor: pointer;
+    font-size: 18px;
+    color: #000000;
+  }
+  
+  .fileInput {
+    display: none;
+  }
+  
+.FileIcon {
+    width: 24px;
+    height: 28px;
+    display: inline-block;
+    background: #a8a8a8;
+    border-radius: 4px;
+    position: relative;
+}
+  
+  .icon::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    border-top: 8px solid #ffffff;
+    border-left: 8px solid transparent;
+  }
+  
+  .text {
+    max-width: 320px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .error {
+    color: #d93025;
+  }
+  
+  .errorText {
+    margin: 2px 0 0;
+    font-size: 14px;
+    color: #d93025;
+  }

@@ -18,3 +18,5 @@ sentence-transformers
 pypdf
 langchain-openai
 minio
+celery
+redis

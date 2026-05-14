@@ -34,6 +34,8 @@ async def create_queued_report(
         measurements=measurements,
         meta=meta,
         llm_response=None,
+        judge_enabled=judge_enabled,
+        judge_status="queued" if judge_enabled else None,
     )
     db.add(report)
     await db.flush()

@@ -1,6 +1,8 @@
 from fastapi import APIRouter, File, UploadFile, Depends, HTTPException, status, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import date
+from fastapi import BackgroundTasks
+from app.services.llm_judge_runner import run_llm_judge_for_report
 
 from app.schemas.report import ReportCreateResponse
 from app.core.enum.report_status import ReportStatus
@@ -17,11 +19,13 @@ router = APIRouter(prefix="/llm", tags=["llm"])
 @router.post("/create_report", response_model=ReportCreateResponse)
 async def create_report(
         # metadata
+        background_tasks: BackgroundTasks,
         patient_name: str = Form(..., description="Patient full name"),
         patient_sex: str = Form(..., description="Sex (Male/Female)"),
         birth_date: date = Form(..., description="Date of birth"),
         ct_date: date = Form(..., description="CT study date"),
         medical_text: str = Form("", description="Medical history + symptoms"),
+        enable_llm_judge: bool = Form(False, description="Run LLM-as-judge after report generation"),
         # files
         ct_images: UploadFile = File(..., description="ZIP archive with CT images"),
         measurements_file: UploadFile = File(..., description="Measurements file (CSV/JSON)"),

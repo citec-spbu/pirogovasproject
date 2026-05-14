@@ -4,7 +4,8 @@ from datetime import date
 
 from app.schemas.report import ReportCreateResponse
 from app.core.enum.report_status import ReportStatus
-from app.services import llm_service, report_service, storage_service
+from app.services import storage_service, report_service
+from app.tasks.report_tasks import generate_report_task
 from app.core.database import get_db
 from app.utils import file_handler
 
@@ -66,27 +67,20 @@ async def create_report(
         }
 
         measurements_dict = file_handler.parse_measurements_file(measurements_bytes, measurements_file.filename)
-        llm_response, trace_data = await llm_service.process_llm_request(patient_data=measurements_dict, medical_text=medical_text)
-
-        # Capture warnings/errors from llm_response
-        trace_data.update({
-            "warnings": llm_response.get("warnings", []),
-            "errors": llm_response.get("errors", [])
-        })
-
-        id_report = await report_service.save_report(
-        db=db,
-        measurements=measurements_dict,
-        input_files=input_files,
-        meta=meta,
-        llm_response=llm_response.get("report"),
-        trace_data=trace_data,
-        user_id=current_user.id,
+        
+        report, llm_call = await report_service.create_queued_report(
+            db=db,
+            measuremrnts=measurements_dict,
+            input_files = input_files,
+            meta = meta,
+            user_id = current_user.id,
         )
 
+        generate_report_task.delay(report.id, llm_call.id)
+
         return ReportCreateResponse(
-            id_report=id_report,
-            status=ReportStatus.PROCESSING
+            id_report=report.id_report,
+            status=report.status,
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e

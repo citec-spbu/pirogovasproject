@@ -20,3 +20,4 @@ langchain-openai
 minio
 celery
 redis
+jinja2

@@ -16,7 +16,7 @@ export async function loginUser(
   body.append('username', login);
   body.append('password', password);
 
-  const response = await fetch(`${API_URL}/api/v1/users/login`, {
+  const response = await fetch(`${API_URL}/users/login`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',

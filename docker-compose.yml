@@ -64,6 +64,7 @@ services:
       - ./backend:/app
     networks:
       - backend
+    
   
   celery_worker:
     build: ./backend
@@ -83,6 +84,23 @@ services:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@database:5432/${POSTGRES_DB:-ct_photos_database}
     volumes:
       - ./backend:/app
+    networks:
+      - backend
+
+
+  frontend:
+    build: ./frontend
+    container_name: ct_photos_frontend
+    depends_on:
+      - backend
+    environment:
+      VITE_API_URL: http://localhost:8000/api/v1
+      VITE_AUTH_BYPASS: "false"
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
     networks:
       - backend
 

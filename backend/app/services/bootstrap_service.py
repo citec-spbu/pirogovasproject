@@ -18,7 +18,7 @@ async def create_tables() -> None:
 
 async def bootstrap_first_admin(db: AsyncSession) -> None:
     admin_exists_result = await db.execute(
-        select(User).where(User.role == UserRole.ADMIN)
+        select(User).where(User.role == UserRole.ADMIN).limit(1)
     )
     admin_exists = admin_exists_result.scalar_one_or_none()
 

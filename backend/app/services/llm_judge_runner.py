@@ -2,19 +2,29 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 from sqlalchemy import select
+from typing import Optional
 
-from backend.app.core.config import get_settings
-from backend.app.core.database import AsyncSessionLocal
-from backend.app.core.enum.call_type import CallType, CallStatus
-from backend.app.models.report import Report
-from backend.app.models.llm_calls import LLMCall
-from backend.app.services.llm_judge import LLMJudge
+from app.core.config import get_settings
+from app.core.database import AsyncSessionLocal
+from app.core.enum.call_type import CallType, CallStatus
+from app.models.report import Report
+from app.models.llm_calls import LLMCall
+from app.services.llm_judge import LLMJudge
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-def _report_to_trace(report: Report) -> dict:
-    return {"measurements": report.measurements, "meta": report.meta, "llm_response": report.llm_response, "trace_data": report.trace_data or {} }
+def _report_to_trace(report: Report, generation_call: Optional[LLMCall]) -> dict:
+    return {
+        "measurements": report.measurements,
+        "meta": report.meta,
+        "llm_response": report.llm_response,
+        "llm_call": {
+            "input_json": generation_call.input_json if generation_call else None,
+            "output_json": generation_call.output_json if generation_call else None,
+            "trace_json": generation_call.trace_json if generation_call else None,
+        },
+    }
 
 async def run_llm_judge_for_report(id_report: str, user_id: int) -> None:
     """Запускает оценку отчёта вызовом LLM, сохраняет результат и запись в БД."""
@@ -38,9 +48,21 @@ async def run_llm_judge_for_report(id_report: str, user_id: int) -> None:
 
         try:
             judge = LLMJudge()
-            trace = _report_to_trace(report)
+
+            result = await db.execute(
+                select(LLMCall)
+                .where(
+                    LLMCall.report_id == report.id,
+                    LLMCall.call_type == CallType.REPORT_GENERATION,
+                )
+                .order_by(LLMCall.created_at.desc())
+            )
+            generation_call = result.scalar_one_or_none()
+
+            trace = _report_to_trace(report, generation_call)
 
             judge_call.prompt = judge.build_prompt(trace)
+            judge_call.input_json = trace
             await db.commit()
 
             judge_result = await asyncio.to_thread(judge.evaluate, trace)

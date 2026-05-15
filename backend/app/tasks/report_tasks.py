@@ -1,6 +1,6 @@
 import asyncio
 from datetime import datetime, timezone
-
+import logging
 from sqlalchemy import select
 
 from app.core.celery_app import celery_app
@@ -10,12 +10,19 @@ from app.core.enum.report_status import ReportStatus
 from app.models.llm_calls import LLMCall
 from app.models.report import Report
 from app.services import llm_service, report_service
+from app.services.llm_judge_runner import run_llm_judge_for_report
+
+logger = logging.getLogger(__name__)
 
 @celery_app.task(name="reports.generate_report", bind=True)
-def generate_report_task(self, report_id: int, llm_call_id: int) -> dict:
-    return asyncio.run(_generate_report(report_id, llm_call_id, self.request.id))
+def generate_report_task(self, report_id: int, llm_call_id: int, enable_llm_judge: bool = False) -> dict:
+    return asyncio.run(_generate_report(report_id, llm_call_id, self.request.id, enable_llm_judge))
 
-async def _generate_report(report_id: int, llm_call_id: int, task_id: int) -> dict:
+async def _generate_report(report_id: int,
+                           llm_call_id: int,
+                           task_id: str,
+                           enable_llm_judge: bool = False,
+) -> dict:
     async with AsyncSessionLocal() as db:
         report = await _get_report(db, report_id)
         llm_call = await _get_llm_call(db, llm_call_id)
@@ -40,7 +47,7 @@ async def _generate_report(report_id: int, llm_call_id: int, task_id: int) -> di
                 "celery_task_id": task_id,
             })
 
-            has_errors = bool(trace_data.get(("errors")))
+            has_errors = bool(trace_data.get("errors"))
 
             report.llm_response = llm_response.get("report")
 
@@ -61,6 +68,11 @@ async def _generate_report(report_id: int, llm_call_id: int, task_id: int) -> di
 
             await db.commit()
 
+            if enable_llm_judge and report.status == ReportStatus.COMPLETED:
+                try:
+                    await run_llm_judge_for_report(report.id_report, report.user_id)
+                except Exception:
+                    logger.exception("LLM judge failed for report %s", report.id_report)
             return {
                 "report_id": report.id,
                 "id_report": report.id_report,

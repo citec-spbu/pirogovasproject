@@ -21,6 +21,7 @@ async def create_queued_report(
     input_files: dict,
     meta: dict,
     user_id: int,
+    judge_enabled: bool,
     template_id: Optional[int] = None,
 ) -> tuple[Report, LLMCall]:
     settings = get_settings()

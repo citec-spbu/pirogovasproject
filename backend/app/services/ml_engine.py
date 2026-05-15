@@ -2,10 +2,11 @@ from pathlib import Path
 from typing import Any, Dict, List, TypedDict
 import json
 import logging
+import uuid
 
-from backend.app.core.rag.kb_manager import ingest_request, initialize_kb
-from backend.app.services.llm_service import build_prompt, call_local_llm, fuse_context
-from backend.app.core.rag.retriever import retrieve_graph_context
+from app.core.rag.kb_manager import ingest_request, initialize_kb
+from app.services.llm_service import build_prompt, call_local_llm, fuse_context
+from app.core.rag.retriever import retrieve_graph_context
 
 logger = logging.getLogger(__name__)
 
@@ -138,3 +139,24 @@ def run_demo() -> Dict[str, Any]:
     logger.debug("Fused context: %s", result.get("fused_context", ""))
     logger.info("Raw LLM output: %s", result.get("raw_llm_output", ""))
 
+graph = build_graph()
+
+def generate_medical_report(query: str, patient_history: str, patient_data: dict, guideline_paths: list[str]) -> Dict[str, Any]:
+    initial_state: MedGraphState = {
+        "query": query,
+        "patient_history": patient_history,
+        "guideline_paths": guideline_paths,
+        "patient_data": patient_data,
+        "thread_id": f"api-{uuid.uuid4()}",
+        "warnings": [],
+        "errors": [],
+    }
+
+    config = {"configurable": {"thread_id": "api-request"}}
+    result = graph.invoke(initial_state, config=config)
+
+    return {
+        "report": result.get("raw_llm_output"),
+        "warnings": result.get("warnings", []),
+        "errors": result.get("errors", []),
+    }

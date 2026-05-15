@@ -2,14 +2,16 @@ import json
 from pathlib import Path
 from typing import Dict, Any
 from langchain_openai import ChatOpenAI
-from app.core.config import settings
+from app.core.config import get_settings
 import logging
 
 logger = logging.getLogger(__name__)
+settings = get_settings()
 VLLM_BASE_URL = settings.VLLM_BASE_URL
 VLLM_API_KEY = settings.VLLM_API_KEY
 VLLM_MODEL = settings.VLLM_MODEL
 OUTPUT_FILE = Path("judge_scores.json")
+
 
 
 class LLMJudge:

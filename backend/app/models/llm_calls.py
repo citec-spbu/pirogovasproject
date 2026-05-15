@@ -1,8 +1,8 @@
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, Boolean, String,Enum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
-from backend.app.core.database import Base
-from backend.app.core.enum.call_type import CallType, CallStatus
+from app.core.database import Base
+from app.core.enum.call_type import CallType, CallStatus
 
 class LLMCall(Base):
     __tablename__ = "llm_calls"

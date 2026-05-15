@@ -91,5 +91,15 @@
   .activeStar {
     color: #FABE23;
   }
+  .empty {
+    padding: 24px;
+    text-align: center;
+    color: #777;
+  }
+  
+  .iconButton:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
   
  

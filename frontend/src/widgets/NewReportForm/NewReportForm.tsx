@@ -4,26 +4,35 @@ import { Input } from '../../shared/ui/Input/Input';
 import { Button } from '../../shared/ui/Button/Button';
 import { FileInput } from '../../shared/ui/FileInput/FileInput';
 import { Radio } from '../../shared/ui/Radio/Radio';
+import type { Report } from '../../entities/report/model/types';
+import { createReport } from '../../shared/api/reportApi';
 import cls from './NewReportForm.module.scss';
 
-export const NewReportForm = () => {
+interface NewReportFormProps {
+  onReportCreated: (report: Report) => void;
+}
+
+export const NewReportForm = ({ onReportCreated }: NewReportFormProps) => {
   const [patientName, setPatientName] = useState('');
   const [gender, setGender] = useState('');
   const [birthDate, setBirthDate] = useState('');
   const [ctDate, setCtDate] = useState('');
   const [anamnesis, setAnamnesis] = useState('');
 
-  const [ctFile, setCtFile] = useState<File | null>(null);
-  const [measurementsFile, setMeasurementsFile] = useState<File | null>(null);
+  const [ctFiles, setCtFiles] = useState<File[]>([]);
+  const [measurementsFiles, setMeasurementsFiles] = useState<File[]>([]);
 
   const [patientNameError, setPatientNameError] = useState('');
   const [genderError, setGenderError] = useState('');
   const [birthDateError, setBirthDateError] = useState('');
   const [ctDateError, setCtDateError] = useState('');
-  const [ctFileError, setCtFileError] = useState('');
-  const [measurementsFileError, setMeasurementsFileError] = useState('');
+  const [ctFilesError, setCtFilesError] = useState('');
+  const [measurementsFilesError, setMeasurementsFilesError] = useState('');
+  const [submitError, setSubmitError] = useState('');
 
-  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
     let hasError = false;
@@ -32,8 +41,9 @@ export const NewReportForm = () => {
     setGenderError('');
     setBirthDateError('');
     setCtDateError('');
-    setCtFileError('');
-    setMeasurementsFileError('');
+    setCtFilesError('');
+    setMeasurementsFilesError('');
+    setSubmitError('');
 
     if (!patientName.trim()) {
       setPatientNameError('Введите ФИО пациента или шифр');
@@ -55,13 +65,13 @@ export const NewReportForm = () => {
       hasError = true;
     }
 
-    if (!ctFile) {
-      setCtFileError('Загрузите КТ-снимки');
+    if (ctFiles.length === 0) {
+      setCtFilesError('Загрузите архив с КТ-снимками');
       hasError = true;
     }
 
-    if (!measurementsFile) {
-      setMeasurementsFileError('Загрузите измерения');
+    if (measurementsFiles.length === 0) {
+      setMeasurementsFilesError('Загрузите файл измерений');
       hasError = true;
     }
 
@@ -69,15 +79,37 @@ export const NewReportForm = () => {
       return;
     }
 
-    console.log({
-      patientName,
-      gender,
-      birthDate,
-      ctDate,
-      anamnesis,
-      ctFile,
-      measurementsFile,
-    });
+    try {
+      setIsSubmitting(true);
+
+      const createdReport = await createReport({
+        patientName,
+        gender,
+        birthDate,
+        ctDate,
+        anamnesis,
+        ctImages: ctFiles[0],
+        measurementsFile: measurementsFiles[0],
+      });
+
+      onReportCreated(createdReport);
+
+      setPatientName('');
+      setGender('');
+      setBirthDate('');
+      setCtDate('');
+      setAnamnesis('');
+      setCtFiles([]);
+      setMeasurementsFiles([]);
+    } catch (error) {
+      if (error instanceof Error) {
+        setSubmitError(error.message);
+      } else {
+        setSubmitError('Не удалось сформировать отчёт');
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -102,17 +134,17 @@ export const NewReportForm = () => {
             onChange={setGender}
             error={genderError}
             options={[
-              { value: 'female', label: 'Женский' },
-              { value: 'male', label: 'Мужской' },
+              { value: 'Female', label: 'Женский' },
+              { value: 'Male', label: 'Мужской' },
             ]}
           />
 
           <Input
-            label="Дата рождения пациент *"
+            label="Дата рождения пациента *"
             value={birthDate}
             onChange={setBirthDate}
             variant="default"
-            placeholder="XX.XX.XXXX"
+            placeholder="ДД.ММ.ГГГГ"
             error={birthDateError}
           />
 
@@ -121,7 +153,7 @@ export const NewReportForm = () => {
             value={ctDate}
             onChange={setCtDate}
             variant="default"
-            placeholder="XX.XX.XXXX"
+            placeholder="ДД.ММ.ГГГГ"
             error={ctDateError}
           />
 
@@ -136,25 +168,46 @@ export const NewReportForm = () => {
           <div className={cls.divider} />
 
           <FileInput
-            label="Загрузите КТ-снимки *"
-            file={ctFile}
-            onChange={setCtFile}
-            error={ctFileError}
+            label="Загрузите КТ-снимки"
+            files={ctFiles}
+            onChange={(files) => {
+              setCtFiles(files);
+
+              if (files.length > 0) {
+                setCtFilesError('');
+              }
+            }}
+            allowedExtensions={['zip']}
+            multiple={false}
+            required
+            error={ctFilesError}
+            placeholder="Выберите архив (.zip)"
           />
 
           <FileInput
-            label="Загрузите измерения *"
-            file={measurementsFile}
-            onChange={setMeasurementsFile}
-            error={measurementsFileError}
+            label="Загрузите измерения"
+            files={measurementsFiles}
+            onChange={(files) => {
+              setMeasurementsFiles(files);
+
+              if (files.length > 0) {
+                setMeasurementsFilesError('');
+              }
+            }}
+            allowedExtensions={['json', 'csv']}
+            multiple={false}
+            required
+            error={measurementsFilesError}
+            placeholder="Выберите файл (.json, .csv)"
           />
 
+          {submitError && <p className={cls.errorText}>{submitError}</p>}
+
           <Button type="submit" className={cls.submitButton}>
-            Сформировать отчёт
+            {isSubmitting ? 'Формируется...' : 'Сформировать отчёт'}
           </Button>
         </form>
       </div>
-
     </section>
   );
 };

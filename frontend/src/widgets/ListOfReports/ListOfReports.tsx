@@ -2,31 +2,71 @@ import { useState } from 'react';
 import cls from './ListOfReports.module.scss';
 import EyeIcon from '../../shared/assets/icons/eyeIcon.svg';
 import DownloadIcon from '../../shared/assets/icons/downloadIcon.svg';
+import type { Report } from '../../entities/report/model/types';
+import {
+  openPdfReport,
+  viewHtmlReport,
+} from '../../shared/api/reportApi';
 
-interface Report {
-  id: number;
-  patientName: string;
-  studyDate: string;
-  status: string;
+interface ListOfReportsProps {
+  reports: Report[];
 }
 
-const reports: Report[] = [
-  {
-    id: 1,
-    patientName: 'Иванов И. И.',
-    studyDate: '12.05.2026',
-    status: 'Готов',
-  },
-];
+const normalizeStatus = (status: string) => status.toLowerCase();
 
-export const ListOfReports = () => {
-  const [ratings, setRatings] = useState<Record<number, number>>({});
+const getStatusLabel = (status: string) => {
+  const normalizedStatus = normalizeStatus(status);
 
-  const handleRatingClick = (reportId: number, rating: number) => {
+  if (normalizedStatus === 'processing') {
+    return 'Формируется';
+  }
+
+  if (normalizedStatus === 'ready' || normalizedStatus === 'completed') {
+    return 'Готов';
+  }
+
+  if (normalizedStatus === 'error' || normalizedStatus === 'failed') {
+    return 'Ошибка';
+  }
+
+  return status;
+};
+
+const isReportReady = (report: Report) => {
+  const normalizedStatus = normalizeStatus(report.status);
+
+  return (
+    normalizedStatus === 'ready' ||
+    normalizedStatus === 'completed' ||
+    report.htmlReady ||
+    report.pdfReady
+  );
+};
+
+export const ListOfReports = ({ reports }: ListOfReportsProps) => {
+  const [ratings, setRatings] = useState<Record<string, number>>({});
+
+  const handleRatingClick = (reportId: string, rating: number) => {
     setRatings((prev) => ({
       ...prev,
       [reportId]: rating,
     }));
+  };
+
+  const handleViewClick = async (reportId: string) => {
+    try {
+      await viewHtmlReport(reportId);
+    } catch (error) {
+      console.error('Не удалось открыть отчёт', error);
+    }
+  };
+
+  const handleDownloadClick = async (reportId: string) => {
+    try {
+      await openPdfReport(reportId);
+    } catch (error) {
+      console.error('Не удалось скачать отчёт', error);
+    }
   };
 
   return (
@@ -42,24 +82,39 @@ export const ListOfReports = () => {
           <div className={cls.cell}>Оценка</div>
         </div>
 
-        {reports.map((report) => {
+        {reports.length === 0 && (
+          <div className={cls.empty}>Отчётов пока нет</div>
+        )}
+
+        {reports.map((report, index) => {
           const currentRating = ratings[report.id] ?? 0;
+          const ready = isReportReady(report);
 
           return (
             <div className={cls.row} key={report.id}>
-              <div className={cls.cell}>{report.id}</div>
+              <div className={cls.cell}>{index + 1}</div>
               <div className={cls.cell}>{report.patientName}</div>
               <div className={cls.cell}>{report.studyDate}</div>
-              <div className={cls.cell}>{report.status}</div>
+              <div className={cls.cell}>{getStatusLabel(report.status)}</div>
 
               <div className={cls.cell}>
-                <button className={cls.iconButton} type="button">
+                <button
+                  className={cls.iconButton}
+                  type="button"
+                  disabled={!ready}
+                  onClick={() => handleViewClick(report.id)}
+                >
                   <img src={EyeIcon} alt="Просмотр отчёта" />
                 </button>
               </div>
 
               <div className={cls.cell}>
-                <button className={cls.iconButton} type="button">
+                <button
+                  className={cls.iconButton}
+                  type="button"
+                  disabled={!ready}
+                  onClick={() => handleDownloadClick(report.id)}
+                >
                   <img src={DownloadIcon} alt="Скачать отчёт" />
                 </button>
               </div>

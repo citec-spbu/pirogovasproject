@@ -1,0 +1,140 @@
+from pathlib import Path
+from typing import Any, Dict, List, TypedDict
+import json
+import logging
+
+from backend.app.core.rag.kb_manager import ingest_request, initialize_kb
+from backend.app.services.llm_service import build_prompt, call_local_llm, fuse_context
+from backend.app.core.rag.retriever import retrieve_graph_context
+
+logger = logging.getLogger(__name__)
+
+class MedGraphState(TypedDict, total=False):
+    query: str
+    patient_history: str
+    guideline_paths: List[str]
+    persist_dir: str
+    patient_data: Dict[str, Any]
+    warnings: List[str]
+    errors: List[str]
+    retrieved_guidelines: List[Dict[str, Any]]
+    fused_context: str
+    final_prompt: str
+    raw_llm_output: str
+    chunks_count: int
+    
+def configure_logging(level: int = logging.INFO) -> None:
+    """
+    Configures application logging for local script runs.
+
+    In production/FastAPI this function can be skipped if logging is already
+    configured by the application server.
+    """
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    )
+
+def build_graph():
+    from langgraph.checkpoint.memory import InMemorySaver
+    from langgraph.graph import END, START, StateGraph
+
+    builder = StateGraph(MedGraphState)
+
+    builder.add_node("ingest_request", ingest_request)
+    builder.add_node("initialize_kb", initialize_kb)
+    builder.add_node("retrieve_graph_context", retrieve_graph_context)
+    builder.add_node("fuse_context", fuse_context)
+    builder.add_node("build_prompt", build_prompt)
+    builder.add_node("call_local_llm", call_local_llm)
+
+    builder.add_edge(START, "ingest_request")
+    builder.add_edge("ingest_request", "initialize_kb")
+    builder.add_edge("initialize_kb", "retrieve_graph_context")
+    builder.add_edge("retrieve_graph_context", "fuse_context")
+    builder.add_edge("fuse_context", "build_prompt")
+    builder.add_edge("build_prompt", "call_local_llm")
+    builder.add_edge("call_local_llm", END)
+
+    return builder.compile(checkpointer=InMemorySaver())
+
+
+def load_patient_data(path: str = "content/0.json") -> Dict[str, Any]:
+    json_path = Path(path)
+    if not json_path.exists():
+        return {}
+
+    with open(json_path, "r", encoding="utf-8") as file:
+        return json.load(file)
+
+
+def export_langsmith_runs(
+    project_name: str = "clinical-rag",
+    limit: int = 11,
+    output_path: str = "langsmith_runs.jsonl",
+) -> None:
+    from langsmith import Client
+
+    client = Client()
+    runs = client.list_runs(project_name=project_name, limit=limit)
+
+    with open(output_path, "w", encoding="utf-8") as file:
+        exported_count=0
+        for run in runs:
+            data = {
+                "id": str(run.id),
+                "name": run.name,
+                "start_time": str(run.start_time),
+                "end_time": str(run.end_time),
+                "inputs": run.inputs,
+                "outputs": run.outputs,
+            }
+            file.write(json.dumps(data, ensure_ascii=False, default=str) + "\n")
+            exported_count += 1
+
+    logger.info("LangSmith runs were exported successfully: count=%s", exported_count)
+
+
+def run_demo() -> Dict[str, Any]:
+    graph = build_graph()
+
+    initial_state: MedGraphState = {
+        "query": "боль в груди, между лопатками, в верхней части спины, шее, затруднённое дыхание, одышка, хрипы, кашель,ощущение комка в горле. Врожденных патологий нет",
+        "patient_history": "Мужчина, 54 лет, длительный стаж курения",
+        "guideline_paths": ["docs"],
+        "warnings": [],
+        "errors": [],
+        "patient_data": load_patient_data(),
+    }
+
+    config = {
+        "configurable": {
+            "thread_id": "local-vllm-demo-001",
+        }
+    }
+
+    result = graph.invoke(initial_state, config=config)
+
+    warnings = result.get("warnings", [])
+    errors = result.get("errors", [])
+    retrieved_guidelines = result.get("retrieved_guidelines", [])
+
+    if warnings:
+        logger.warning("Warnings: %s", warnings)
+    else:
+        logger.info("Warnings: none")
+
+    if errors:
+        logger.error("Errors: %s", errors)
+    else:
+        logger.info("Errors: none")
+
+    logger.info("Chunks count: %s", result.get("chunks_count", 0))
+    logger.info("Retrieved guidelines count: %s", len(retrieved_guidelines))
+
+    for index, item in enumerate(retrieved_guidelines, start=1):
+        logger.info("Retrieved guideline %s: %s", index, item)
+
+    logger.debug("Fused context: %s", result.get("fused_context", ""))
+    logger.info("Raw LLM output: %s", result.get("raw_llm_output", ""))
+

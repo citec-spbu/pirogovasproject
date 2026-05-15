@@ -35,23 +35,6 @@ async def get_my_reports(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail = str(e)
 )
     
-@router.get("/make_report")
-async def make_report(
-    id_report: str = Query(...),
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-    ):
-    try:
-        report = await report_service.get_report_by_id(db, id_report)
-        ensure_report_access(current_user, report)
-        
-        html_path, pdf_path = await report_service.generate_report(db, id_report)
-        return {"html_path": html_path, "pdf_path": pdf_path}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
-    
 @router.post("/{id_report}/add_review")
 async def add_review(
     id_report: str,
@@ -115,4 +98,25 @@ async def get_pdf_report_url(
         raise
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
-        
+
+@router.get("/{id_report}/status")
+async def get_report_status(
+    id_report: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    try:
+        report = await report_service.get_report_by_id(db, id_report)
+        ensure_report_access(current_user, report)
+
+        return {
+            "id_report": report.id_report,
+            "status": report.status,
+            "error_message": report.error_message,
+            "html_ready": bool(report.html_object_key),
+            "pdf_ready": bool(report.pdf_object_key),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

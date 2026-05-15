@@ -1,7 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import uuid
-from typing import List
+from typing import List, Optional
 
 from app.models.report import Report
 from app.models.user import User
@@ -15,42 +15,45 @@ from app.services import storage_service
 from app.utils.pdf_generator import generate_pdf_from_html
 from app.utils.html_report_generator import generate_html_report
 
-async def save_report(db: AsyncSession, measurements,input_files,meta, llm_response,trace_data, user_id: int, judge_enabled: bool = False,):
-    
+async def create_queued_report(
+    db: AsyncSession,
+    measurements: dict,
+    input_files: dict,
+    meta: dict,
+    user_id: int,
+    judge_enabled: bool,
+    template_id: Optional[int] = None,
+) -> tuple[Report, LLMCall]:
     settings = get_settings()
     
     id_report = str(uuid.uuid4())
     report = Report(
         id_report=id_report,
         user_id=user_id,
-        llm_response=llm_response,
         status =ReportStatus.PROCESSING,
         input_files=input_files,
         measurements=measurements,
         meta=meta,
+        llm_response=None,
         judge_enabled=judge_enabled,
         judge_status="queued" if judge_enabled else None,
     )
-
     db.add(report)
     await db.flush()
 
-
-    has_errors = bool((trace_data or {}).get("errors"))
     llm_call = LLMCall(
         report_id=report.id,
         user_id=user_id,
-        status=CallStatus.FAILED if has_errors else CallStatus.COMPLETED,
+        status=CallStatus.QUEUED,
         call_type=CallType.REPORT_GENERATION,
         provider="vllm",
         model=settings.VLLM_MODEL,
         prompt=meta.get("anamnesis", ""),
+        template_id=template_id,
         input_json={
             "measurements": measurements,
             "meta": meta,
         },
-        output_json=llm_response,
-        trace_json=trace_data,
     )
     db.add(llm_call)
 
@@ -58,7 +61,7 @@ async def save_report(db: AsyncSession, measurements,input_files,meta, llm_respo
     await db.refresh(report)
     await db.refresh(llm_call)
 
-    return id_report
+    return report, llm_call
 
 async def get_report_by_id(db:AsyncSession, id_report:str) -> Report:
     result = await db.execute(select(Report).where(Report.id_report == id_report))
@@ -87,12 +90,10 @@ async def get_reports_by_user_id(
     result = result.scalars().all()
     return result
 
-async def generate_report(db: AsyncSession, id_report: str, output_dir: str = "reports") -> str:
-    result = await db.execute(select(Report).where(Report.id_report == id_report))
-    report = result.scalar_one_or_none()
-
-    if not report:
-        raise ValueError("Report not found")
+async def render_and_store_report_files(
+    db: AsyncSession,
+    report: Report,
+) -> tuple[str, str]:
 
     html_content = generate_html_report(report)
     html_object_key = await storage_service.upload_text(
@@ -111,10 +112,8 @@ async def generate_report(db: AsyncSession, id_report: str, output_dir: str = "r
 
     report.html_object_key = html_object_key
     report.pdf_object_key = pdf_object_key
-    report.status = ReportStatus.COMPLETED
 
-    await db.commit()
-    await db.refresh(report)
+    await db.flush()
 
     return html_object_key, pdf_object_key
     

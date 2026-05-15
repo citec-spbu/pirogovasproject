@@ -24,7 +24,7 @@ async def create_user(db: AsyncSession, user_data: AdminCreateUser) -> User:
             detail="Login is already registered"
         )
     
-    organization_result = await db.execute( select(Organization).where(Organization.id == user_data.organization_id))
+    organization_result = await db.execute( select(Organization).where(Organization.name == user_data.organization_name))
     organization = organization_result.scalar_one_or_none()
     if not organization:
         raise HTTPException(
@@ -38,7 +38,7 @@ async def create_user(db: AsyncSession, user_data: AdminCreateUser) -> User:
         login=user_data.login,
         hashed_password=hashed_password,
         role = user_data.role,
-        organization_id=user_data.organization_id,
+        organization_name=user_data.organization_name,
         name=user_data.name,
         surname=user_data.surname,
         patronymic=user_data.patronymic,

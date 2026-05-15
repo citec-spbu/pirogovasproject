@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String,ForeignKey,DateTime, Enum
+from sqlalchemy import Column, Integer, String,ForeignKey,DateTime, Enum, Boolean
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 from app.core.database import Base
@@ -20,6 +20,12 @@ class Report(Base):
     meta = Column(JSONB, nullable=False)
 
     llm_response = Column(JSONB, nullable=True)
+
+    judge_enabled = Column(Boolean, nullable=False, default=False, server_default="false")
+    judge_status = Column(String, nullable=True)
+    judge_response = Column(JSONB, nullable=True)
+    judge_error = Column(String, nullable=True)
+    judge_completed_at = Column(DateTime(timezone=True), nullable=True)
 
     html_object_key = Column(String, nullable=True)
     pdf_object_key = Column(String, nullable=True)

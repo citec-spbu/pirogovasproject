@@ -6,8 +6,6 @@ from datetime import date
 
 
 class Settings(BaseSettings):
-    SECRET_KEY: str
-
     FIRST_ADMIN_LOGIN: str
     FIRST_ADMIN_PASSWORD: str
     FIRST_ADMIN_NAME: str
@@ -16,16 +14,21 @@ class Settings(BaseSettings):
     FIRST_ORGANIZATION_NAME: str
     FIRST_ADMIN_DATE_OF_BIRTH: date
 
-    DATABASE_URL: str = "postgresql://postgres:password@localhost/db"
+    SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
+    DATABASE_URL: str = "postgresql://postgres:password@localhost/db"
+    
     MINIO_ENDPOINT: str
     MINIO_ACCESS_KEY: str
     MINIO_SECRET_KEY: str
     MINIO_BUCKET_NAME: str
     MINIO_SECURE: bool
     MINIO_PRESIGNED_EXPIRES_SECONDS: int
+
+    CELERY_BROKER_URL: str = "redis://localhost:6379/0"
+    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
 
     GUIDELINE_PATHS: Optional[str] = None
 

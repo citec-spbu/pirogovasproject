@@ -62,6 +62,7 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app
+      - ./clinical_protocols:/app/clinical_protocols
     networks:
       - backend
   
@@ -83,6 +84,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@database:5432/${POSTGRES_DB:-ct_photos_database}
     volumes:
       - ./backend:/app
+      - ./clinical_protocols:/app/clinical_protocols
     networks:
       - backend
 

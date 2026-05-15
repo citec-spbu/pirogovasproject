@@ -72,6 +72,7 @@ export const ListOfReports = ({ reports }: ListOfReportsProps) => {
   return (
     <section className={cls.wrapper}>
       <div className={cls.table}>
+      <div id="reports-title" className={cls.anchor} />
         <div className={cls.header}>
           <div className={cls.cell}>№ отчёта</div>
           <div className={cls.cell}>Имя пациента</div>

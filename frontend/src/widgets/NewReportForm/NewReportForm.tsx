@@ -115,7 +115,7 @@ export const NewReportForm = ({ onReportCreated }: NewReportFormProps) => {
   return (
     <section className={cls.page}>
       <div className={cls.formWrapper}>
-        <h1 className={cls.title}>Новый отчёт</h1>
+      <h1 id="new-report-title" className={cls.title}>Новый отчёт</h1>
 
         <form className={cls.form} onSubmit={handleSubmit}>
           <Input

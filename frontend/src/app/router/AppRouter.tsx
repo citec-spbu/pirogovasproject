@@ -22,7 +22,7 @@ export const AppRouter = () => {
         path="/admin"
         element={
           <ProtectedRoute allowedRoles={['admin']}>
-           <MainPage />
+           < MainPage/>
           </ProtectedRoute>
         }
       />

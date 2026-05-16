@@ -3,6 +3,8 @@ from typing import Any, Dict, List, TypedDict
 import json
 import logging
 import uuid
+from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.memory import InMemorySaver
 
 from app.core.rag.kb_manager import ingest_request, initialize_kb
 from app.services.llm_service import build_prompt, call_local_llm, fuse_context
@@ -36,12 +38,22 @@ def configure_logging(level: int = logging.INFO) -> None:
         format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     )
 
+def validate_and_set_defaults(state: MedGraphState) -> MedGraphState:
+    defaults = {
+        "query": "Жалоб на здоровье нет",
+        "patient_history": "Анамнез не предоставлен",
+        "patient_data": {},
+        "guideline_paths": [],
+        "warnings": [],
+        "errors": []
+    }
+    # Обновляем только отсутствующие или пустые поля
+    updates = {k: v for k, v in defaults.items() if not state.get(k)}
+    return updates
+
 def build_graph():
-    from langgraph.checkpoint.memory import InMemorySaver
-    from langgraph.graph import END, START, StateGraph
-
     builder = StateGraph(MedGraphState)
-
+    builder.add_node("validate_input", validate_and_set_defaults)
     builder.add_node("ingest_request", ingest_request)
     builder.add_node("initialize_kb", initialize_kb)
     builder.add_node("retrieve_graph_context", retrieve_graph_context)
@@ -49,7 +61,8 @@ def build_graph():
     builder.add_node("build_prompt", build_prompt)
     builder.add_node("call_local_llm", call_local_llm)
 
-    builder.add_edge(START, "ingest_request")
+    builder.add_edge(START, "validate_input")
+    builder.add_edge("validate_input", "ingest_request")             
     builder.add_edge("ingest_request", "initialize_kb")
     builder.add_edge("initialize_kb", "retrieve_graph_context")
     builder.add_edge("retrieve_graph_context", "fuse_context")

@@ -1,5 +1,5 @@
 from functools import wraps
-from typing import Any, Dict, List
+from typing import Any, Dict, Optional, TypedDict
 import logging
 import threading
 import time
@@ -38,8 +38,14 @@ except ImportError:
         save_kb_to_disk,
     )
 
+class VersionedKB(TypedDict):
+    versions: Dict[str, Dict[str, Any]]
+    active_version: Optional[str]
+    locks: Dict[str, threading.Lock]
 
-KB_CACHE: Dict[str, Dict[str, Any]] = {}
+KB_CACHE: Dict[str, VersionedKB] = {}
+
+#KB_CACHE: Dict[str, Dict[str, Any]] = {}
 KB_CACHE_LOCKS: Dict[str, threading.Lock] = {}
 KB_CACHE_LOCK = threading.Lock()
 
@@ -92,9 +98,12 @@ def build_kb(folder_path: str, use_bm25: bool = True) -> Dict[str, Any]:
     chunks = build_chunks(docs)
     texts = [chunk["text"] for chunk in chunks]
 
-    cluster_indexes = build_cluster_indexes(chunks)
+    #Считаем эмбеддинги ОДИН раз для всех чанков
     embeddings = embed_texts(texts) if texts else np.empty((0, 0), dtype=np.float32)
+    text_to_emb = {t: e for t, e in zip(texts, embeddings)}
     faiss_index, dim = build_faiss_index(embeddings)
+    cluster_indexes = build_cluster_indexes(chunks, text_to_emb=text_to_emb)
+
     graph = build_knowledge_graph(chunks)
 
     kb: Dict[str, Any] = {

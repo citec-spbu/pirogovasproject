@@ -51,6 +51,27 @@ KB_CACHE_LOCK = threading.Lock()
 
 logger = logging.getLogger(__name__)
 
+def ensure_cluster_bm25_indexes(kb: Dict[str, Any], use_bm25: bool = True) -> Dict[str, Any]:
+    if not use_bm25:
+        return kb
+
+    cluster_indexes = kb.get("cluster_indexes", {})
+
+    for cluster_name, cluster_kb in cluster_indexes.items():
+        bm25_index = cluster_kb.get("bm25_index")
+
+        if bm25_index is not None and hasattr(bm25_index, "get_scores"):
+            continue
+
+        cluster_chunks = cluster_kb.get("chunks", [])
+        cluster_texts = [chunk["text"] for chunk in cluster_chunks]
+
+        if cluster_texts:
+            cluster_corpus = build_bm25_corpus(cluster_texts)
+            cluster_kb["bm25_corpus"] = cluster_corpus
+            cluster_kb["bm25_index"] = build_bm25_index(cluster_corpus)
+
+    return kb
 
 def track_node_time(func):
     @wraps(func)
@@ -132,7 +153,6 @@ def _get_or_create_lock(docs_path: str) -> threading.Lock:
 
 
 def _initialize_kb_sync(docs_path: str, use_bm25: bool) -> Dict[str, Any]:
-    """Synchronous KB initialization logic."""
     kb = load_kb_from_disk(docs_path, use_bm25=use_bm25)
 
     if kb is None:
@@ -151,6 +171,8 @@ def _initialize_kb_sync(docs_path: str, use_bm25: bool) -> Dict[str, Any]:
             save_graph_to_disk(docs_path, graph)
 
         kb["knowledge_graph"] = graph
+
+    kb = ensure_cluster_bm25_indexes(kb, use_bm25=use_bm25)
 
     return kb
 

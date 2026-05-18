@@ -1,25 +1,42 @@
 import { NavLink } from 'react-router-dom';
 import cls from './AdminSidebar.module.scss';
 
+const adminNavItems = [
+  {
+    to: '/admin',
+    label: 'Home Dashboard',
+    end: true,
+  },
+  {
+    to: '/admin/templates',
+    label: 'Шаблоны',
+  },
+  {
+    to: '/admin/users',
+    label: 'Пользователи',
+  },
+  {
+    to: '/admin/protocols',
+    label: 'Протоколы',
+  },
+];
+
 export const AdminSidebar = () => {
   return (
     <aside className={cls.sidebar}>
       <nav className={cls.nav}>
-        <NavLink to="/admin" end className={cls.link}>
-          Главная
-        </NavLink>
-
-        <NavLink to="/admin/templates" className={cls.link}>
-          Шаблоны
-        </NavLink>
-
-        <NavLink to="/admin/users" className={cls.link}>
-          Пользователи
-        </NavLink>
-
-        <NavLink to="/admin/protocols" className={cls.link}>
-          Протоколы
-        </NavLink>
+        {adminNavItems.map((item) => (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            end={item.end}
+            className={({ isActive }) =>
+              [cls.link, isActive ? cls.active : ''].filter(Boolean).join(' ')
+            }
+          >
+            {item.label}
+          </NavLink>
+        ))}
       </nav>
     </aside>
   );

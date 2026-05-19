@@ -2,7 +2,8 @@ from functools import wraps
 from typing import Any, Dict, List, Set
 import re
 import time
-
+from app.core.config import get_settings
+from app.core.rag.embedder import get_embedder
 import numpy as np
 
 try:
@@ -16,10 +17,13 @@ except ImportError:
     from embedder import embed_texts
     from graph_builder import graph_expand_from_chunks
 
+settings=get_settings()
 
-CROSS_ENCODER_MODEL_NAME = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
+CROSS_ENCODER_MODEL_NAME = settings.CROSS_ENCODER_MODEL_NAME
+EMBEDDING_MODEL_NAME=settings.EMBEDDING_MODEL_NAME
 _CROSS_ENCODER = None
 _MORPH = None
+_EMBEDDER = None
 
 SYMPTOM_TOP_K = 4
 JSON_CANDIDATES_TOP_K = 10
@@ -70,7 +74,6 @@ def get_morph():
     global _MORPH
     if _MORPH is None:
         import pymorphy3
-
         _MORPH = pymorphy3.MorphAnalyzer()
     return _MORPH
 
@@ -229,18 +232,10 @@ def hybrid_retrieve(query: str, kb: Dict[str, Any], top_k: int) -> List[Dict[str
             result["score"] = 0.3 * result["score"] + 0.7 * float(ce_scores[i])
 
     results.sort(key=lambda item: item["score"], reverse=True)
-    for result in results:
-        result.pop("index", None)
-
     return results[:top_k]
 
 
-def hybrid_retrieve_from_clusters(
-    query: str,
-    kb: Dict[str, Any],
-    target_clusters: List[str],
-    top_k: int,
-) -> List[Dict[str, Any]]:
+def hybrid_retrieve_from_clusters(query: str, kb: Dict[str, Any], target_clusters: List[str], top_k: int) -> List[Dict[str, Any]]:
     cluster_indexes = kb.get("cluster_indexes", {})
 
     if not target_clusters or "general" in target_clusters:
@@ -253,11 +248,7 @@ def hybrid_retrieve_from_clusters(
         if not cluster_kb:
             continue
 
-        cluster_results = hybrid_retrieve(
-            query=query,
-            kb=cluster_kb,
-            top_k=top_k,
-        )
+        cluster_results = hybrid_retrieve(query=query, kb=cluster_kb, top_k=top_k)
 
         for result in cluster_results:
             result["matched_cluster"] = cluster
@@ -278,10 +269,7 @@ def hybrid_retrieve_from_clusters(
     return results[:top_k]
 
 
-def _apply_json_heuristics(
-    candidates: List[Dict[str, Any]],
-    keywords_from_json: Set[str],
-) -> List[Dict[str, Any]]:
+def _apply_json_heuristics(candidates: List[Dict[str, Any]], keywords_from_json: Set[str]) -> List[Dict[str, Any]]:
     for candidate in candidates:
         chunk_lower = candidate["text"].lower()
         chunk_normalized = _normalize_text(candidate["text"])

@@ -10,6 +10,7 @@ from app.services import admin_service
 from app.api.dependencies import require_admin
 from app.models.user import User
 
+
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 @router.post("/create_user", response_model=AdminUserOut, status_code=status.HTTP_201_CREATED)
@@ -66,17 +67,27 @@ async def upload_report_template(
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-@router.post("/clinical-protocols/replace", response_model=List[ClinicalProtocolOut])
-async def replace_clinical_protocols(
-    files: List[UploadFile] = File(...),
+# @router.post("/clinical-protocols/replace", response_model=List[ClinicalProtocolOut])
+# async def replace_clinical_protocols(
+#     files: List[UploadFile] = File(...),
+#     admin: User = Depends(require_admin),
+#     db: AsyncSession = Depends(get_db),
+# ):
+#     try:
+#         return await admin_service.replace_clinical_protocols(
+#             db=db,
+#             files=files,
+#             uploaded_by_user_id=admin.id,
+#         )
+#     except Exception as e:
+#         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+@router.post("/clinical-protocols/add", response_model=List[ClinicalProtocolOut])
+async def add_clinical_protocols(
+    file: UploadFile = File(..., description="PDF file"),
     admin: User = Depends(require_admin),
-    db: AsyncSession = Depends(get_db),
-):
+    db: AsyncSession = Depends(get_db)):
     try:
-        return await admin_service.replace_clinical_protocols(
-            db=db,
-            files=files,
-            uploaded_by_user_id=admin.id,
-        )
+        return await admin_service.add_clinical_protocols(db=db, file=file, uploaded_by_user_id=admin.id, docs_path="clinical_protocols")
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

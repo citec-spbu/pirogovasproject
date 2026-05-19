@@ -4,7 +4,7 @@ import logging
 from sqlalchemy import select
 
 from app.core.celery_app import celery_app
-from app.core.database import AsyncSessionLocal
+from app.core.database import AsyncSessionLocal, engine
 from app.core.enum.call_type import CallStatus
 from app.core.enum.report_status import ReportStatus
 from app.models.llm_calls import LLMCall
@@ -12,11 +12,24 @@ from app.models.report import Report
 from app.services import llm_service, report_service
 from app.services.llm_judge_runner import run_llm_judge_for_report
 
+from app.models.report_templates import ReportTemplate
+
 logger = logging.getLogger(__name__)
 
 @celery_app.task(name="reports.generate_report", bind=True)
 def generate_report_task(self, report_id: int, llm_call_id: int, enable_llm_judge: bool = False) -> dict:
-    return asyncio.run(_generate_report(report_id, llm_call_id, self.request.id, enable_llm_judge))
+    async def runner():
+        try:
+            return await _generate_report(
+                report_id,
+                llm_call_id,
+                self.request.id,
+                enable_llm_judge,
+            )
+        finally:
+            await engine.dispose()
+
+    return asyncio.run(runner())
 
 async def _generate_report(report_id: int,
                            llm_call_id: int,

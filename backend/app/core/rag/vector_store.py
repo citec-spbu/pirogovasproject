@@ -41,18 +41,20 @@ def build_faiss_index(embeddings: np.ndarray):
     return index, dim
 
 
-def build_cluster_indexes(chunks: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+def build_cluster_indexes(chunks: List[Dict[str, Any]], text_to_emb: Optional[Dict[str, np.ndarray]] = None) -> Dict[str, Dict[str, Any]]:
     cluster_to_chunks: Dict[str, List[Dict[str, Any]]] = {}
-
     for chunk in chunks:
         for cluster in chunk.get("clusters", ["general"]):
             cluster_to_chunks.setdefault(cluster, []).append(chunk)
 
     cluster_indexes: Dict[str, Dict[str, Any]] = {}
-
     for cluster_name, cluster_chunks in cluster_to_chunks.items():
         texts = [chunk["text"] for chunk in cluster_chunks]
-        embeddings = embed_texts(texts) if texts else np.empty((0, 0), dtype=np.float32)
+        #Используем предвычисленные эмбеддинги
+        if text_to_emb:
+            embeddings = np.array([text_to_emb[t] for t in texts])
+        else:
+            embeddings = embed_texts(texts) if texts else np.empty((0, 0), dtype=np.float32)
 
         if len(embeddings) == 0:
             continue
@@ -69,7 +71,6 @@ def build_cluster_indexes(chunks: List[Dict[str, Any]]) -> Dict[str, Dict[str, A
         }
 
     return cluster_indexes
-
 
 def _cluster_cache_dir(prefix: Path) -> Path:
     return Path(f"{prefix}_clusters")
@@ -113,7 +114,6 @@ def save_kb_to_disk(folder_path: str, kb: Dict[str, Any], use_bm25: bool = False
                 with open(f"{cluster_prefix}_bm25_corpus.pkl", "wb") as file:
                     pickle.dump(cluster_kb["bm25_corpus"], file)
 
-
 def _load_cluster_indexes(prefix: Path) -> Dict[str, Dict[str, Any]]:
     faiss = _get_faiss()
     cluster_dir = _cluster_cache_dir(prefix)
@@ -125,7 +125,7 @@ def _load_cluster_indexes(prefix: Path) -> Dict[str, Dict[str, Any]]:
         cluster_name_safe = chunks_file.name[: -len("_chunks.json")]
         meta_file = cluster_dir / f"{cluster_name_safe}_meta.json"
         index_file = cluster_dir / f"{cluster_name_safe}_faiss.index"
-        corpus_file = cluster_dir / f"{cluster_name_safe}_bm25_corpus.pkl"
+        bm25_index_file = cluster_dir / f"{cluster_name_safe}_bm25_corpus.pkl"
 
         if not index_file.exists():
             continue
@@ -149,11 +149,10 @@ def _load_cluster_indexes(prefix: Path) -> Dict[str, Dict[str, Any]]:
             "dim": index.d,
         }
 
-        if corpus_file.exists():
-            with open(corpus_file, "rb") as file:
-                corpus = pickle.load(file)
-            cluster_kb["bm25_corpus"] = corpus
-            cluster_kb["bm25_index"] = build_bm25_index(corpus)
+        #Загружаем готовый индекс, без пересборки
+        if bm25_index_file.exists():
+            with open(bm25_index_file, "rb") as file:
+                cluster_kb["bm25_index"] = pickle.load(file)
 
         cluster_indexes[cluster_name] = cluster_kb
 
@@ -180,12 +179,11 @@ def load_kb_from_disk(folder_path: str, use_bm25: bool = False) -> Optional[Dict
         "cluster_indexes": _load_cluster_indexes(prefix),
     }
 
+    #Загружаем готовый BM25 индекс напрямую
     if use_bm25:
-        corpus_file = Path(f"{prefix}_bm25_corpus.pkl")
-        if corpus_file.exists():
-            with open(corpus_file, "rb") as file:
-                corpus = pickle.load(file)
-            kb["bm25_corpus"] = corpus
-            kb["bm25_index"] = build_bm25_index(corpus)
+        bm25_idx_file = Path(f"{prefix}_bm25_index.pkl")
+        if bm25_idx_file.exists():
+            with open(bm25_idx_file, "rb") as file:
+                kb["bm25_index"] = pickle.load(file)
 
     return kb

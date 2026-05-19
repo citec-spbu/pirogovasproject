@@ -35,3 +35,10 @@ class AdminUserOut(BaseModel):
     is_active: bool
 
     model_config = ConfigDict(from_attributes=True)
+
+class AdminMetricsOut(BaseModel):
+    llm_calls_total: int
+    llm_calls_failed: int
+    llm_error_percent: float
+    reviewed_reports_total: int
+    average_review_score: Optional[float] = None

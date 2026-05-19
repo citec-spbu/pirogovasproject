@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List
 
 from app.core.database import get_db
-from app.schemas.admin import AdminCreateUser, AdminUserOut, AdminUpdateUser
+from app.schemas.admin import AdminCreateUser, AdminUserOut, AdminUpdateUser, AdminMetricsOut
 from app.schemas.report_template import ReportTemplateCreate, ReportTemplateOut
 from app.schemas.clinical_protocol import ClinicalProtocolOut
 from app.services import admin_service
@@ -80,3 +80,24 @@ async def replace_clinical_protocols(
         )
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    
+@router.get("/users", response_model=List[AdminUserOut])
+async def get_all_users(
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    return await admin_service.get_all_users(db)
+
+@router.get("/report-templates", response_model=List[ReportTemplateOut])
+async def get_all_report_templates(
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    return await admin_service.get_all_report_templates(db)
+
+@router.get("/metrics", response_model=AdminMetricsOut)
+async def get_metrics(
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    return await admin_service.get_admin_metrics(db)

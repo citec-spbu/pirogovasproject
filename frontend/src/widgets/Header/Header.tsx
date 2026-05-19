@@ -1,17 +1,30 @@
+import { useNavigate } from 'react-router-dom';
+import { ProfileDropdown } from '../ProfileDropdown/ProfileDropdown';
+import { logoutUser } from '../../shared/api/authApi';
+import HeartlogoIcon from '../../shared/assets/icons/heartLogoIcon.svg';
 import cls from './Header.module.scss';
-import LogoIcon from '../../shared/assets/icons/CTReport.svg';
-import UserIcon from '../../shared/assets/icons/userIcon.svg';
 
 export const Header = () => {
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logoutUser();
+    navigate('/login', { replace: true });
+  };
+
   return (
     <header className={cls.header}>
-      <div className={cls.left}>
-        <img className={cls.logoIcon} src={LogoIcon} alt="HomeIcon" />
-      </div>
+      <div className={cls.logoBlock}>
+          <img src={HeartlogoIcon} alt="CTReportUser" className={cls.logoIcon} />
+          <span className={cls.logoText}>CTReport</span>
+        </div>
 
-      <div className={cls.right}>
-      <img className={cls.userIcon} src={UserIcon} alt="HomeIcon" />
-      </div>
+      <ProfileDropdown
+        triggerLabel="Пользователь"
+        fullName="Фамилия Имя Отчество"
+        roleLabel="Пользователь"
+        onLogout={handleLogout}
+      />
     </header>
   );
 };

@@ -10,21 +10,21 @@
   
     background: rgba(0, 0, 0, 0.85);
 }
-  
-.left {
+.logoBlock {
     display: flex;
     align-items: center;
-    gap: 8px;
-}
-.logoIcon{
-}
-.userIcon{
-
-}
-.logoText {
-    font-family: 'OpenSans', sans-serif;
-    font-size: 18px;
-    font-weight: 700;
-    color: white;
+    gap: 13px;
 }
   
+.logoIcon {
+    width: 60px;
+    height: 60px;
+}
+  
+.logoText {
+    font-size: 24px;
+    font-weight: 400;
+    line-height: 28px;
+    font-family: 'DaysOne';
+    color: #ffffff;
+}

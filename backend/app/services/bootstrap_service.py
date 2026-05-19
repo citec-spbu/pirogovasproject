@@ -31,43 +31,49 @@ async def bootstrap_first_admin(db: AsyncSession) -> None:
         await db.refresh(organization)
 
     users_to_create = [
-        {
-            "login": get_settings().FIRST_ADMIN_LOGIN,
-            "password": get_settings().FIRST_ADMIN_PASSWORD,
-            "role": UserRole.ADMIN,
-            "name": get_settings().FIRST_ADMIN_NAME,
-            "surname": get_settings().FIRST_ADMIN_SURNAME,
-            "patronymic": get_settings().FIRST_ADMIN_PATRONYMIC,
-            "date_of_birth": get_settings().FIRST_ADMIN_DATE_OF_BIRTH,
-        },
-        {
-            "login": "doctor1",
-            "password": "doctor123",
-            "role": UserRole.USER,
-            "name": "Doctor",
-            "surname": "One",
-            "patronymic": "User",
-            "date_of_birth": get_settings().FIRST_ADMIN_DATE_OF_BIRTH,
-        },
-        {
-            "login": "doctor2",
-            "password": "doctor123",
-            "role": UserRole.USER,
-            "name": "Doctor",
-            "surname": "Two",
-            "patronymic": "User",
-            "date_of_birth": get_settings().FIRST_ADMIN_DATE_OF_BIRTH,
-        },
-        {
-            "login": "doctor3",
-            "password": "doctor123",
-            "role": UserRole.USER,
-            "name": "Doctor",
-            "surname": "Three",
-            "patronymic": "User",
-            "date_of_birth": get_settings().FIRST_ADMIN_DATE_OF_BIRTH,
-        },
+    {
+        "login": get_settings().FIRST_ADMIN_LOGIN,
+        "password": get_settings().FIRST_ADMIN_PASSWORD,
+        "role": UserRole.ADMIN,
+        "name": get_settings().FIRST_ADMIN_NAME,
+        "surname": get_settings().FIRST_ADMIN_SURNAME,
+        "patronymic": get_settings().FIRST_ADMIN_PATRONYMIC,
+        "date_of_birth": get_settings().FIRST_ADMIN_DATE_OF_BIRTH,
+    },
     ]
+
+    if get_settings().SEED_DEMO_USERS:
+        users_to_create.extend(
+            [
+                {
+                    "login": "doctor1",
+                    "password": "doctor123",
+                    "role": UserRole.USER,
+                    "name": "Doctor",
+                    "surname": "One",
+                    "patronymic": "User",
+                    "date_of_birth": get_settings().FIRST_ADMIN_DATE_OF_BIRTH,
+                },
+                {
+                    "login": "doctor2",
+                    "password": "doctor123",
+                    "role": UserRole.USER,
+                    "name": "Doctor",
+                    "surname": "Two",
+                    "patronymic": "User",
+                    "date_of_birth": get_settings().FIRST_ADMIN_DATE_OF_BIRTH,
+                },
+                {
+                    "login": "doctor3",
+                    "password": "doctor123",
+                    "role": UserRole.USER,
+                    "name": "Doctor",
+                    "surname": "Three",
+                    "patronymic": "User",
+                    "date_of_birth": get_settings().FIRST_ADMIN_DATE_OF_BIRTH,
+                },
+            ]
+        )
 
     for user_data in users_to_create:
         existing_user_result = await db.execute(

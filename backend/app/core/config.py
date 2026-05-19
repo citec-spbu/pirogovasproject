@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     FIRST_ADMIN_PATRONYMIC: str
     FIRST_ORGANIZATION_NAME: str
     FIRST_ADMIN_DATE_OF_BIRTH: date
+    SEED_DEMO_USERS: bool = False
 
     SECRET_KEY: str
     ALGORITHM: str = "HS256"

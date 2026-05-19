@@ -66,7 +66,16 @@ export const NewReportForm = ({ onReportCreated }: NewReportFormProps) => {
     }
 
     if (ctFiles.length === 0) {
-      setCtFilesError('Загрузите архив с КТ-снимками');
+      setCtFilesError('Загрузите ZIP-архив или КТ-снимки');
+      hasError = true;
+    }
+
+    const zipCount = ctFiles.filter((file) =>
+      file.name.toLowerCase().endsWith('.zip')
+    ).length;
+
+    if (zipCount > 1 || (zipCount === 1 && ctFiles.length > 1)) {
+      setCtFilesError('Загрузите либо один ZIP-архив, либо изображения PNG/JPG/JPEG');
       hasError = true;
     }
 
@@ -88,7 +97,7 @@ export const NewReportForm = ({ onReportCreated }: NewReportFormProps) => {
         birthDate,
         ctDate,
         anamnesis,
-        ctImages: ctFiles[0],
+        ctImages: ctFiles,
         measurementsFile: measurementsFiles[0],
       });
 
@@ -177,11 +186,11 @@ export const NewReportForm = ({ onReportCreated }: NewReportFormProps) => {
                 setCtFilesError('');
               }
             }}
-            allowedExtensions={['zip']}
-            multiple={false}
+            allowedExtensions={['zip', 'png', 'jpg', 'jpeg']}
+            multiple
             required
             error={ctFilesError}
-            placeholder="Выберите архив (.zip)"
+            placeholder="Выберите ZIP или изображения (.png, .jpg, .jpeg)"
           />
 
           <FileInput

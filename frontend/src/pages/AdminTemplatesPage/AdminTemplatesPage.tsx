@@ -1,6 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { FileInput } from '../../shared/ui/FileInput/FileInput';
 import { Button } from '../../shared/ui/Button/Button';
+import {
+  getReportTemplates,
+  uploadReportTemplate,
+} from '../../shared/api/adminApi';
 import downloadIcon from '../../shared/assets/icons/downloadIcon.svg';
 import cls from './AdminTemplatesPage.module.scss';
 
@@ -11,42 +15,53 @@ type TemplateVersion = {
   date: string;
 };
 
-const mockVersions: TemplateVersion[] = [
-  {
-    id: '1',
-    version: 'random',
-    status: 'active',
-    date: 'XX.XX.XXXX',
-  },
-];
-
 const getCurrentDate = () => {
   return new Date().toLocaleDateString('ru-RU');
 };
 
 export const AdminTemplatesPage = () => {
   const [files, setFiles] = useState<File[]>([]);
-  const [versions, setVersions] = useState<TemplateVersion[]>(mockVersions);
+  const [versions, setVersions] = useState<TemplateVersion[]>([]);
 
-  const handleUpload = () => {
+  useEffect(() => {
+    getReportTemplates()
+      .then((templates) => {
+        setVersions(
+          templates.map((template) => ({
+            id: String(template.id),
+            version: `${template.name} ${template.version}`,
+            status: template.is_active ? 'active' : 'inactive',
+            date: new Date(template.created_at).toLocaleDateString('ru-RU'),
+          }))
+        );
+      })
+      .catch(console.error);
+  }, []);
+
+  const handleUpload = async () => {
     if (files.length === 0) {
       console.log('Файл шаблона не выбран');
       return;
     }
 
     const file = files[0];
+    const template = await uploadReportTemplate(
+      file,
+      file.name,
+      getCurrentDate(),
+      false
+    );
 
-    const newVersion: TemplateVersion = {
-      id: crypto.randomUUID(),
-      version: file.name,
-      status: 'inactive',
-      date: getCurrentDate(),
-    };
-
-    setVersions((prevVersions) => [newVersion, ...prevVersions]);
+    setVersions((prevVersions) => [
+      {
+        id: String(template.id),
+        version: `${template.name} ${template.version}`,
+        status: template.is_active ? 'active' : 'inactive',
+        date: new Date(template.created_at).toLocaleDateString('ru-RU'),
+      },
+      ...prevVersions,
+    ]);
     setFiles([]);
-
-    console.log('Загружен шаблон:', file);
   };
 
   return (

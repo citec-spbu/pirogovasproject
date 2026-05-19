@@ -1,64 +1,35 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { User, UserFormValues } from '../../entities/user/model/types';
 import { AdminUsersToolbar } from '../../widgets/AdminUsersToolbar/AdminUsersToolbar';
 import { UsersTable } from '../../widgets/UsersTable/UsersTable';
 import { UserFormModal } from '../../features/user-form-modal/UserFormModal';
 import { UserInfoModal } from '../../features/view-user-modal/UserInfoModal';
+import {
+  createAdminUser,
+  getAdminUsers,
+  updateAdminUser,
+} from '../../shared/api/adminApi';
 import addIcon from '../../shared/assets/icons/addIcon.svg';
 import cls from './AdminUsersPage.module.scss';
 
-const mockUsers: User[] = [
-  {
-    id: '1',
-    fullName: 'Вячеславов Вячеслав Вячеславович',
-    lastName: 'Вячеславов',
-    firstName: 'Вячеслав',
-    middleName: 'Вячеславович',
-    birthDate: '01.01.1990',
-    login: 'user_login',
-    organization: 'Название',
-    role: 'user',
-    status: 'active',
-  },
-  {
-    id: '2',
-    fullName: 'Иванов Иван Иванович',
-    lastName: 'Иванов',
-    firstName: 'Иван',
-    middleName: 'Иванович',
-    birthDate: '02.02.1991',
-    login: 'ivanov',
-    organization: 'Поликлиника №1',
-    role: 'user',
-    status: 'active',
-  },
-  {
-    id: '3',
-    fullName: 'Сергей Ли',
-    lastName: 'Ли',
-    firstName: 'Сергей',
-    middleName: '',
-    birthDate: '03.03.1992',
-    login: 'koreya',
-    organization: 'Неколаевская',
-    role: 'user',
-    status: 'active',
-  },
-];
-
-const buildFullName = (values: UserFormValues): string => {
-  return [values.lastName, values.firstName, values.middleName]
-    .filter(Boolean)
-    .join(' ');
-};
-
 export const AdminUsersPage = () => {
-  const [users, setUsers] = useState<User[]>(mockUsers);
+  const [users, setUsers] = useState<User[]>([]);
   const [searchValue, setSearchValue] = useState('');
+  const [loadError, setLoadError] = useState('');
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [viewUser, setViewUser] = useState<User | null>(null);
   const [editUser, setEditUser] = useState<User | null>(null);
+
+  useEffect(() => {
+    getAdminUsers()
+      .then(setUsers)
+      .catch((error) => {
+        setLoadError(
+          error instanceof Error ? error.message : 'Не удалось загрузить пользователей'
+        );
+      });
+  }, []);
 
   const filteredUsers = useMemo(() => {
     const normalizedSearch = searchValue.trim().toLowerCase();
@@ -80,48 +51,32 @@ export const AdminUsersPage = () => {
     console.log('Поиск пользователя:', searchValue);
   };
 
-  const handleCreateUser = (values: UserFormValues) => {
-    const newUser: User = {
-      id: crypto.randomUUID(),
-      fullName: buildFullName(values),
-      lastName: values.lastName,
-      firstName: values.firstName,
-      middleName: values.middleName,
-      birthDate: values.birthDate,
-      login: values.login,
-      organization: values.organization,
-      role: values.role,
-      status: 'active',
-    };
-
-    setUsers((prevUsers) => [...prevUsers, newUser]);
-    setIsCreateOpen(false);
+  const handleCreateUser = async (values: UserFormValues) => {
+    try {
+      const newUser = await createAdminUser(values);
+      setUsers((prevUsers) => [...prevUsers, newUser]);
+      setIsCreateOpen(false);
+    } catch (error) {
+      console.error(error);
+    }
   };
 
-  const handleEditUser = (values: UserFormValues) => {
+  const handleEditUser = async (values: UserFormValues) => {
     if (!editUser) {
       return;
     }
 
-    setUsers((prevUsers) =>
-      prevUsers.map((user) =>
-        user.id === editUser.id
-          ? {
-              ...user,
-              fullName: buildFullName(values),
-              lastName: values.lastName,
-              firstName: values.firstName,
-              middleName: values.middleName,
-              birthDate: values.birthDate,
-              login: values.login,
-              organization: values.organization,
-              role: values.role,
-            }
-          : user
-      )
-    );
+    try {
+      const updatedUser = await updateAdminUser(editUser.id, values);
 
-    setEditUser(null);
+      setUsers((prevUsers) =>
+        prevUsers.map((user) => (user.id === editUser.id ? updatedUser : user))
+      );
+
+      setEditUser(null);
+    } catch (error) {
+      console.error(error);
+    }
   };
 
   const handleDeleteUser = (user: User) => {
@@ -153,6 +108,8 @@ export const AdminUsersPage = () => {
             />
           </button>
         </div>
+
+        {loadError && <p>{loadError}</p>}
 
         <UsersTable
           users={filteredUsers}

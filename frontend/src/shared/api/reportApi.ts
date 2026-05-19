@@ -10,7 +10,7 @@ interface CreateReportPayload {
   birthDate: string;
   ctDate: string;
   anamnesis: string;
-  ctImages: File;
+  ctImages: File[];
   measurementsFile: File;
 }
 
@@ -84,7 +84,9 @@ export const createReport = async (
   formData.append('medical_text', payload.anamnesis);
   formData.append('enable_llm_judge', 'false');
 
-  formData.append('ct_images', payload.ctImages);
+  payload.ctImages.forEach((file) => {
+    formData.append('ct_images', file);
+  });
   formData.append('measurements_file', payload.measurementsFile);
 
   const data = await apiClient<CreateReportResponse>('/llm/create_report', {

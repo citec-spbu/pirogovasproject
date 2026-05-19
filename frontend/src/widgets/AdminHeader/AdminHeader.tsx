@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ProfileDropdown } from '../ProfileDropdown/ProfileDropdown';
 import { ChangePasswordModal } from '../../features/change-password/ChangePasswordModal';
 import { logoutUser } from '../../shared/api/authApi';
+import { changeMyPassword, getMyFioRole } from '../../shared/api/userApi';
+import type { UserRole } from '../../entities/user/model/types';
 import HeartlogoIcon from '../../shared/assets/icons/heartLogoIcon.svg';
 import DoorIcon from '../../shared/assets/icons/doorIcon.svg';
 import cls from './AdminHeader.module.scss';
@@ -10,6 +12,14 @@ import cls from './AdminHeader.module.scss';
 export const AdminHeader = () => {
   const navigate = useNavigate();
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+  const [profile, setProfile] = useState<{ fio: string; role: UserRole }>({
+    fio: 'Пользователь',
+    role: 'admin',
+  });
+
+  useEffect(() => {
+    getMyFioRole().then(setProfile).catch(() => undefined);
+  }, []);
 
   const handleLogout = () => {
     logoutUser();
@@ -34,9 +44,9 @@ export const AdminHeader = () => {
 
         <div className={cls.actions}>
           <ProfileDropdown
-            triggerLabel="Пользователь"
-            fullName="Фамилия Имя Отчество"
-            roleLabel="Администратор"
+            triggerLabel={profile.fio}
+            fullName={profile.fio}
+            roleLabel={profile.role === 'admin' ? 'Администратор' : 'Пользователь'}
             showChangePassword
             onChangePassword={handleChangePassword}
             onLogout={handleLogout}
@@ -56,6 +66,7 @@ export const AdminHeader = () => {
       <ChangePasswordModal
         isOpen={isChangePasswordOpen}
         onClose={() => setIsChangePasswordOpen(false)}
+        onSubmit={changeMyPassword}
       />
     </>
   );

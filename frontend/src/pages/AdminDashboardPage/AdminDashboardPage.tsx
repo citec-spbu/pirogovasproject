@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import starFullIcon from '../../shared/assets/icons/starFullIcon.svg';
+import { getAdminMetrics } from '../../shared/api/adminApi';
 import cls from './AdminDashboardPage.module.scss';
 
 type DashboardStats = {
@@ -8,21 +9,25 @@ type DashboardStats = {
   responseTime: string;
 };
 
-const mockDashboardStats: DashboardStats = {
-  score: '4.8',
-  errors: '2.3%',
-  responseTime: '30 с.',
-};
-
 export const AdminDashboardPage = () => {
   const [stats, setStats] = useState<DashboardStats | null>(null);
 
   useEffect(() => {
-    // Потом здесь будет запрос к backend:
-    // const data = await getAdminDashboardStats();
-    // setStats(data);
-
-    setStats(mockDashboardStats);
+    getAdminMetrics()
+      .then((data) => {
+        setStats({
+          score: data.average_review_score?.toFixed(1) ?? '—',
+          errors: `${data.llm_error_percent}%`,
+          responseTime: '—',
+        });
+      })
+      .catch(() => {
+        setStats({
+          score: '—',
+          errors: '—',
+          responseTime: '—',
+        });
+      });
   }, []);
 
   if (!stats) {

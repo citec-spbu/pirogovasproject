@@ -8,4 +8,6 @@ export interface Report {
   htmlReady?: boolean;
   pdfReady?: boolean;
   errorMessage?: string | null;
+  reviewScore?: number | null;
+  reviewText?: string | null;
 }

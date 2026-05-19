@@ -1,9 +1,10 @@
-import { useState } from 'react';
 import cls from './ListOfReports.module.scss';
 import EyeIcon from '../../shared/assets/icons/eyeIcon.svg';
 import DownloadIcon from '../../shared/assets/icons/downloadIcon.svg';
 import type { Report } from '../../entities/report/model/types';
+import { ReportReview } from '../../features/report-review/ReportReview';
 import {
+  addReportReview,
   openPdfReport,
   viewHtmlReport,
 } from '../../shared/api/reportApi';
@@ -44,15 +45,6 @@ const isReportReady = (report: Report) => {
 };
 
 export const ListOfReports = ({ reports }: ListOfReportsProps) => {
-  const [ratings, setRatings] = useState<Record<string, number>>({});
-
-  const handleRatingClick = (reportId: string, rating: number) => {
-    setRatings((prev) => ({
-      ...prev,
-      [reportId]: rating,
-    }));
-  };
-
   const handleViewClick = async (reportId: string) => {
     try {
       await viewHtmlReport(reportId);
@@ -69,10 +61,19 @@ export const ListOfReports = ({ reports }: ListOfReportsProps) => {
     }
   };
 
+  const handleReviewSubmit = async (
+    reportId: string,
+    rating: number,
+    comment: string
+  ) => {
+    await addReportReview(reportId, rating, comment);
+  };
+
   return (
     <section className={cls.wrapper}>
       <div className={cls.table}>
-      <div id="reports-title" className={cls.anchor} />
+        <div id="reports-title" className={cls.anchor} />
+
         <div className={cls.header}>
           <div className={cls.cell}>№ отчёта</div>
           <div className={cls.cell}>Имя пациента</div>
@@ -88,7 +89,6 @@ export const ListOfReports = ({ reports }: ListOfReportsProps) => {
         )}
 
         {reports.map((report, index) => {
-          const currentRating = ratings[report.id] ?? 0;
           const ready = isReportReady(report);
 
           return (
@@ -116,26 +116,19 @@ export const ListOfReports = ({ reports }: ListOfReportsProps) => {
                   disabled={!ready}
                   onClick={() => handleDownloadClick(report.id)}
                 >
-                  <img src={DownloadIcon} alt="Скачать отчёт" />
+                  <img src={DownloadIcon} alt="Скачать отчёт"  />
                 </button>
               </div>
 
               <div className={cls.cell}>
-                <div className={cls.rating}>
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <button
-                      key={star}
-                      type="button"
-                      className={`${cls.starButton} ${
-                        star <= currentRating ? cls.activeStar : ''
-                      }`}
-                      onClick={() => handleRatingClick(report.id, star)}
-                      aria-label={`Оценить на ${star}`}
-                    >
-                      ★
-                    </button>
-                  ))}
-                </div>
+                <ReportReview
+                  disabled={!ready}
+                  initialRating={report.reviewScore}
+                  initialComment={report.reviewText}
+                  onSubmit={(rating, comment) =>
+                    handleReviewSubmit(report.id, rating, comment)
+                  }
+                />
               </div>
             </div>
           );

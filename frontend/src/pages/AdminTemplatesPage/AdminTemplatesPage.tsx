@@ -96,7 +96,7 @@ export const AdminTemplatesPage = () => {
                     className={cls.iconButton}
                     aria-label="Скачать шаблон"
                   >
-                    <img src={downloadIcon} alt="" />
+                    <img src={downloadIcon} alt="" className={cls.downloadIcon}/>
                   </button>
                 </td>
               </tr>

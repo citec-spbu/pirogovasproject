@@ -182,9 +182,8 @@ export const UserFormModal = ({
                     updateField('role', event.target.value as UserRole)
                   }
                 >
-                  <option value="user">user</option>
-                  <option value="doctor">doctor</option>
-                  <option value="admin">admin</option>
+                  <option value="user">Пользователь</option>
+                  <option value="admin">Администратор</option>
                 </select>
               </label>
 

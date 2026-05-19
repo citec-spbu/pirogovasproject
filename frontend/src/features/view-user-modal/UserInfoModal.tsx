@@ -14,7 +14,6 @@ interface UserInfoModalProps {
 const roleLabels: Record<User['role'], string> = {
   admin: 'Администратор',
   user: 'Пользователь',
-  doctor: 'Врач',
 };
 
 const statusLabels: Record<User['status'], string> = {

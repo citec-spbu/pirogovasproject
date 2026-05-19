@@ -29,7 +29,7 @@ const mockUsers: User[] = [
     birthDate: '02.02.1991',
     login: 'ivanov',
     organization: 'Поликлиника №1',
-    role: 'doctor',
+    role: 'user',
     status: 'active',
   },
   {
@@ -41,7 +41,7 @@ const mockUsers: User[] = [
     birthDate: '03.03.1992',
     login: 'koreya',
     organization: 'Неколаевская',
-    role: 'doctor',
+    role: 'user',
     status: 'active',
   },
 ];

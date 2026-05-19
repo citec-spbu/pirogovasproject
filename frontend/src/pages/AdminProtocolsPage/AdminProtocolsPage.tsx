@@ -6,8 +6,6 @@ import fileIcon from '../../shared/assets/icons/fileBlueIcon.svg';
 import cls from './AdminProtocolsPage.module.scss';
 
 const mockProtocols = [
-  '158-157-1-PB.pdf',
-  '337-649-1-SM.pdf',
   'Аортальная недостаточность.pdf',
   'Аортальный стеноз.pdf',
   'Расслоение аорты_final.pdf',
@@ -23,7 +21,9 @@ const mockProtocols = [
   'recommendation.pdf',
   'recommendation2.pdf',
   'rogers2013.pdf',
-  'ziganshin2019.pdf'
+  'ziganshin2019.pdf',
+  '158-157-1-PB.pdf',
+  '337-649-1-SM.pdf'
 ];
 
 export const AdminProtocolsPage = () => {

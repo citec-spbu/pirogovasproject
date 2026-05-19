@@ -88,14 +88,50 @@
     color: #d84c4c;
   }
   
-//   .eyeBtn {
-//     position: absolute;
-//     top: 50%;
-//     right: 14px;
-//     transform: translateY(-50%);
-//     border: none;
-//     background: transparent;
-//     cursor: pointer;
-//     font-size: 16px;
-//     padding: 0;
-//   }
+  .field {
+    position: relative;
+  }
+  
+  .withPasswordToggle .input {
+    padding-right: 42px;
+  }
+  
+.eyeBtn {
+  position: absolute;
+  right: 30px;
+  top: 50%;
+
+  width: 24px;
+  height: 24px;
+
+  transform: translateY(-50%);
+
+  background: none;
+  border: none;
+  padding: 0;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  cursor: pointer;
+}
+
+.eyeIcon {
+  width: 25px;
+  height: 25px;
+  opacity: 0.65;
+}
+
+.eyeBtn:hover .eyeIcon {
+  opacity: 1;
+}
+.default .eyeBtn {
+  top: auto;
+  bottom: 8px;
+  transform: none;
+}
+.floating .eyeBtn {
+  top: 50%;
+  transform: translateY(-50%);
+}

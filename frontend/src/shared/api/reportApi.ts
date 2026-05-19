@@ -25,6 +25,8 @@ interface BackendReport {
   error_message?: string | null;
   html_ready?: boolean;
   pdf_ready?: boolean;
+  review_score?: number | null;
+  review_text?: string | null;
   meta?: {
     name?: string;
     ct_date?: string;
@@ -65,6 +67,8 @@ const mapReport = (report: BackendReport): Report => {
     htmlReady: report.html_ready,
     pdfReady: report.pdf_ready,
     errorMessage: report.error_message ?? null,
+    reviewScore: report.review_score ?? null,
+    reviewText: report.review_text ?? null,
   };
 };
 
@@ -138,4 +142,27 @@ export const openPdfReport = async (reportId: string) => {
   );
 
   window.open(data.url, '_blank');
+};
+interface AddReportReviewPayload {
+  review_score: number;
+  review_text?: string;
+}
+
+export const addReportReview = async (
+  reportId: string,
+  rating: number,
+  comment: string
+): Promise<void> => {
+  const payload: AddReportReviewPayload = {
+    review_score: rating,
+    review_text: comment.trim() || undefined,
+  };
+
+  await apiClient(`/reports/${reportId}/add_review`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
 };

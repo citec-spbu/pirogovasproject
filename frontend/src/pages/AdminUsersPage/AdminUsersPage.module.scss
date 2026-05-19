@@ -1,0 +1,41 @@
+.page {
+    width: 100%;
+}
+  
+.section {
+    margin-top: clamp(37px, 2.9vw, 74px);;
+}
+  
+.sectionHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  
+    margin-bottom: clamp(13px, 1vw, 25px);
+}
+  
+.title {
+    margin: 0;
+  
+    font-family: 'OpenSans', sans-serif;
+    font-size: clamp(18px, 1.45vw, 37px);
+    line-height: 16px;
+    font-weight: 500;
+    color: #000000;
+}
+  
+.createButton {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  
+    background: none;
+    border: none;
+
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.addIcon{
+    width: clamp(35px, 2vw, 54px);
+    height: clamp(35px, 2vw, 54px);
+}

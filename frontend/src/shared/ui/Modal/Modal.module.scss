@@ -1,0 +1,19 @@
+.overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 32px;
+    box-sizing: border-box;
+    z-index: 1000;
+
+  }
+  
+  .content {
+    width: 100%;
+    max-width: 900px;
+    display: flex;
+    justify-content: center;
+  }

@@ -17,14 +17,6 @@ async def create_tables() -> None:
         await conn.run_sync(Base.metadata.create_all)
 
 async def bootstrap_first_admin(db: AsyncSession) -> None:
-    admin_exists_result = await db.execute(
-        select(User).where(User.role == UserRole.ADMIN)
-    )
-    admin_exists = admin_exists_result.scalar_one_or_none()
-
-    if admin_exists:
-        return
-    
     organization_exists_result = await db.execute(
         select(Organization).where(Organization.name == get_settings().FIRST_ORGANIZATION_NAME)
     )

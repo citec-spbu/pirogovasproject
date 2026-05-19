@@ -62,8 +62,8 @@ async def update_user(db: AsyncSession, user_id: int, user_data: AdminUpdateUser
             detail="User not found"
         )
     
-    if user_data.organization_id:
-        organization_result = await db.execute( select(Organization).where(Organization.id == user_data.organization_id))
+    if user_data.organization_name:
+        organization_result = await db.execute( select(Organization).where(Organization.name == user_data.organization_name))
         organization = organization_result.scalar_one_or_none()
         if not organization:
             raise HTTPException(

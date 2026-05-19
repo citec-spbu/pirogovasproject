@@ -10,7 +10,7 @@ class AdminCreateUser(BaseModel):
     organization_name: str
     name: str
     surname: str
-    patronymic: str
+    patronymic: Optional[str] = None
     date_of_birth: date
 
 class AdminUpdateUser(BaseModel):
@@ -30,7 +30,7 @@ class AdminUserOut(BaseModel):
     organization_name: str
     name: str
     surname: str
-    patronymic: str
+    patronymic: Optional[str] = None
     date_of_birth: date
     is_active: bool
 

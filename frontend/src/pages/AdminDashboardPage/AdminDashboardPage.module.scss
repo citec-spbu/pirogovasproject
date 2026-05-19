@@ -1,0 +1,145 @@
+.page {
+    width: 100%;
+  }
+  
+  .stats {
+    display: flex;
+    justify-content: center;
+    gap: 56px;
+    margin-top: 40px;
+  }
+  
+  .statCard {
+    position: relative;
+  
+    width: 148px;
+    height: 148px;
+  
+    border: 1px solid #d6d6d6;
+    border-radius: 50%;
+    background: #ffffff;
+  
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  
+    opacity: 0;
+    transform: translateY(18px) scale(0.96);
+  
+    animation: statAppear 0.55s ease forwards;
+  
+    transition:
+      transform 0.25s ease,
+      box-shadow 0.25s ease,
+      border-color 0.25s ease;
+  }
+  
+  .statCard:nth-child(1) {
+    animation-delay: 0.05s;
+  }
+  
+  .statCard:nth-child(2) {
+    animation-delay: 0.16s;
+  }
+  
+  .statCard:nth-child(3) {
+    animation-delay: 0.27s;
+  }
+  
+  .statCard::before {
+    content: '';
+    position: absolute;
+    inset: -6px;
+  
+    border-radius: 50%;
+    border: 1px solid rgba(0, 151, 167, 0.22);
+  
+    opacity: 0;
+    transform: scale(0.9);
+  
+    transition:
+      opacity 0.25s ease,
+      transform 0.25s ease;
+  }
+  
+  .statCard:hover {
+    transform: translateY(-6px) scale(1.03);
+    border-color: #0097a7;
+    box-shadow: 0 12px 28px rgba(0, 151, 167, 0.18);
+  }
+  
+  .statCard:hover::before {
+    opacity: 1;
+    transform: scale(1);
+  }
+  
+  .statLabel {
+    margin: 0 0 10px;
+  
+    font-family: 'OpenSans', sans-serif;
+    font-size: 20px;
+    line-height: 24px;
+    color: #000000;
+  }
+  
+  .valueRow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  
+  .statValue {
+    margin: 0;
+  
+    font-family: 'OpenSans', sans-serif;
+    font-size: 30px;
+    line-height: 36px;
+    font-weight: 400;
+    color: #000000;
+  }
+  
+  .starIcon {
+    width: 24px;
+    height: 24px;
+  
+    animation: starPop 0.6s ease 0.45s both;
+  }
+  
+  .loading {
+    margin: 40px 0 0;
+  
+    font-family: 'OpenSans', sans-serif;
+    font-size: 16px;
+    color: #000000;
+  }
+  
+  @keyframes statAppear {
+    from {
+      opacity: 0;
+      transform: translateY(18px) scale(0.96);
+    }
+  
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+  
+  @keyframes starPop {
+    0% {
+      opacity: 0;
+      transform: scale(0.4) rotate(-20deg);
+    }
+  
+    65% {
+      opacity: 1;
+      transform: scale(1.18) rotate(8deg);
+    }
+  
+    100% {
+      opacity: 1;
+      transform: scale(1) rotate(0);
+    }
+  }

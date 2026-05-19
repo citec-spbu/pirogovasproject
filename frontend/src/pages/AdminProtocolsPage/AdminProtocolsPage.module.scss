@@ -1,0 +1,68 @@
+.page {
+    width: 100%;
+    margin: 0 auto;
+}
+  
+.uploadSection {
+    margin-top: 28px;
+}
+  
+.title,
+.subtitle {
+    margin: 0 0 18px;
+  
+    font-family: 'OpenSans', sans-serif;
+    font-size: 24px;
+    line-height: 16px;
+    font-weight: 500;
+    color: #000000;
+}
+  
+.uploadButton {
+
+    margin-top: 14px;
+    padding: 16px 37px;
+  
+    background: #00bfc9;;
+    border-radius: 11px;
+  
+    font-family: 'OpenSans', sans-serif;
+    font-size: 16px;
+    font-weight: 600;
+    color: #ffffff;
+}
+  
+  
+.uploadButton:hover {
+    background: #008894;
+}
+  
+.currentSection {
+    margin-top: 34px;
+}
+  
+.fileList {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  
+    margin: 0;
+    padding: 0;
+  
+    list-style: none;
+}
+  
+.fileItem {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+  
+    font-family: 'OpenSans', sans-serif;
+    font-size: 15px;
+    color: #000000;
+}
+  
+.protocolIcon {
+    width: 25px;
+    height: 25px;
+}

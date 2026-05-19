@@ -4,7 +4,7 @@ import FileIcon from '../../assets/icons/fileIcon.svg';
 import cls from './FileInput.module.scss';
 
 interface FileInputProps {
-  label: string;
+  label?: string;
   files: File[];
   onChange: (files: File[]) => void;
 
@@ -69,6 +69,7 @@ export const FileInput = ({
       if (required) {
         setLocalError('Поле обязательно для заполнения');
       }
+
       return;
     }
 
@@ -87,6 +88,10 @@ export const FileInput = ({
       }
     }
 
+    if (validFiles.length === 0) {
+      return;
+    }
+
     const updatedFiles = multiple
       ? [...files, ...validFiles]
       : validFiles.slice(0, 1);
@@ -99,10 +104,6 @@ export const FileInput = ({
 
     addFiles(selectedFiles);
 
-    /**
-     * Нужно, чтобы пользователь мог повторно выбрать тот же файл.
-     * Без этого onChange может не сработать.
-     */
     event.target.value = '';
   };
 
@@ -144,24 +145,36 @@ export const FileInput = ({
 
     if (required) {
       setLocalError('Поле обязательно для заполнения');
+    } else {
+      setLocalError('');
     }
   };
 
   const currentError = error || localError;
 
+  const extensionsText = normalizedExtensions
+    .map((ext) => `.${ext}`)
+    .join(', ');
+
+  const mainText = placeholder || `Выберите файл (${extensionsText})`;
+
   return (
     <div className={cls.wrapper}>
-      <p className={cls.label}>
-        {label}
-        {required && <span className={cls.required}> *</span>}
-      </p>
+      {label && (
+        <p className={cls.label}>
+          {label}
+          {required && <span className={cls.required}> *</span>}
+        </p>
+      )}
 
       <label
-        className={`
-          ${cls.fileButton}
-          ${isDragActive ? cls.dragActive : ''}
-          ${currentError ? cls.error : ''}
-        `}
+        className={[
+          cls.fileButton,
+          isDragActive ? cls.dragActive : '',
+          currentError ? cls.error : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -178,19 +191,17 @@ export const FileInput = ({
         <img className={cls.fileIcon} src={FileIcon} alt="" />
 
         <span className={cls.text}>
-          {placeholder ||
-            `Выберите файл (${normalizedExtensions
-              .map((ext) => `.${ext}`)
-              .join(', ')})`}
+          {mainText}
+          <span className={cls.dragText}> или перетащите сюда</span>
         </span>
-
-        <span className={cls.dragText}>или перетащите сюда</span>
       </label>
 
       {files.length > 0 && (
         <div className={cls.fileList}>
           <div className={cls.fileListHeader}>
-            <span>Загружено файлов: {files.length}</span>
+            <span className={cls.fileCount}>
+              Загружено файлов: {files.length}
+            </span>
 
             <button
               type="button"

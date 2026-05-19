@@ -1,60 +1,198 @@
 .wrapper {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  
-  .label {
-    margin: 0;
-    font-size: 20px;
-    line-height: 1.2;
-    color: #000000;
-  }
-  
-  .fileButton {
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    width: fit-content;
-    cursor: pointer;
-    font-size: 18px;
-    color: #000000;
-  }
-  
-  .fileInput {
-    display: none;
-  }
-  
-.FileIcon {
-    width: 24px;
-    height: 28px;
-    display: inline-block;
-    background: #a8a8a8;
-    border-radius: 4px;
-    position: relative;
+  width: 100%;
 }
-  
-  .icon::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    right: 0;
-    border-top: 8px solid #ffffff;
-    border-left: 8px solid transparent;
-  }
-  
-  .text {
-    max-width: 320px;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-  }
-  .error {
-    color: #d93025;
-  }
-  
-  .errorText {
-    margin: 2px 0 0;
-    font-size: 14px;
-    color: #d93025;
-  }
+
+.label {
+  margin: 0 0 8px;
+
+  font-family: 'OpenSans', sans-serif;
+  font-size: 14px;
+  line-height: 18px;
+  color: #000000;
+}
+
+.required {
+  color: #e30000;
+}
+
+.fileButton {
+  width: 100%;
+  min-height: 94px;
+
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+
+  padding: 18px 22px;
+  box-sizing: border-box;
+
+  background: #f4f4f4;
+  border: 1px solid #e0e0e0;
+  border-radius: 14px;
+
+  cursor: pointer;
+
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.fileButton:hover {
+  background: #eeeeee;
+  border-color: #cfcfcf;
+}
+
+.dragActive {
+  background: #eefafa;
+  border-color: #0097a7;
+  box-shadow: 0 0 0 2px rgba(0, 151, 167, 0.12);
+}
+
+.error {
+  border-color: #e30000;
+}
+
+.fileInput {
+  display: none;
+}
+
+.fileIcon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  opacity: 0.65;
+}
+
+.text {
+  font-family: 'OpenSans', sans-serif;
+  font-size: 14px;
+  line-height: 18px;
+  color: #000000;
+}
+
+.dragText {
+  color: #000000;
+}
+
+.fileList {
+  margin-top: 10px;
+
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fileListHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  min-height: 28px;
+}
+
+.fileCount {
+  font-family: 'OpenSans', sans-serif;
+  font-size: 13px;
+  line-height: 17px;
+  color: #555555;
+}
+
+.clearButton {
+  min-height: 26px;
+
+  background: #ffffff;
+  border: 1px solid #0097a7;
+  border-radius: 5px;
+
+  padding: 0 10px;
+
+  font-family: 'OpenSans', sans-serif;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  color: #0097a7;
+
+  cursor: pointer;
+
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
+}
+
+.clearButton:hover {
+  background: #0097a7;
+  color: #ffffff;
+}
+
+.fileItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+
+  padding: 8px 10px;
+  box-sizing: border-box;
+
+  background: #f7f7f7;
+  border: 1px solid #eeeeee;
+  border-radius: 6px;
+}
+
+.fileInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+
+  min-width: 0;
+}
+
+.fileName {
+  max-width: 420px;
+
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  font-family: 'OpenSans', sans-serif;
+  font-size: 13px;
+  line-height: 17px;
+  color: #000000;
+}
+
+.fileSize {
+  font-family: 'OpenSans', sans-serif;
+  font-size: 12px;
+  line-height: 16px;
+  color: #777777;
+}
+
+.removeButton {
+  min-height: 26px;
+
+  background: none;
+  border: none;
+
+  padding: 0 4px;
+
+  font-family: 'OpenSans', sans-serif;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  color: #e30000;
+
+  cursor: pointer;
+}
+
+.removeButton:hover {
+  text-decoration: underline;
+}
+
+.errorText {
+  margin: 8px 0 0;
+
+  font-family: 'OpenSans', sans-serif;
+  font-size: 13px;
+  line-height: 17px;
+  color: #e30000;
+}

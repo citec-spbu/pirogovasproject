@@ -62,7 +62,6 @@ def build_graph():
     builder.add_node("fuse_context", fuse_context)
     builder.add_node("build_prompt", build_prompt)
     builder.add_node("call_local_llm", call_local_llm)
-    builder.add_node("get_structured_answer", get_structured_answer)
 
     builder.add_edge(START, "validate_input")
     builder.add_edge("validate_input", "ingest_request")             
@@ -71,8 +70,7 @@ def build_graph():
     builder.add_edge("retrieve_graph_context", "fuse_context")
     builder.add_edge("fuse_context", "build_prompt")
     builder.add_edge("build_prompt", "call_local_llm")
-    builder.add_edge("call_local_llm", "get_structured_answer")
-    builder.add_edge("get_structured_answer", END)
+    builder.add_edge("call_local_llm", END)
 
     return builder.compile(checkpointer=InMemorySaver())
 

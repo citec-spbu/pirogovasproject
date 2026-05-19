@@ -1,5 +1,5 @@
 from functools import wraps
-from typing import Any, Dict, Optional, TypedDict
+from typing import Any, Dict, Optional, TypedDict, List
 import logging
 import threading
 import time
@@ -227,3 +227,72 @@ def initialize_kb(state: Dict[str, Any]) -> Dict[str, Any]:
             "errors": errors,
             "chunks_count": 0,
         }
+        
+def incremental_add_to_kb(docs_path: str, new_docs: List[Any], use_bm25: bool = True) -> Dict[str, Any]:
+    lock = _get_or_create_lock(docs_path)
+    with lock:
+        kb = KB_CACHE.get(docs_path)
+        if kb is None:
+            kb = load_kb_from_disk(docs_path, use_bm25=use_bm25)
+            if kb is None:
+                return build_kb(docs_path, use_bm25=use_bm25)
+
+        new_chunks = build_chunks(new_docs)
+        if not new_chunks:
+            return kb
+
+        new_texts = [c["text"] for c in new_chunks]
+        new_embeddings = embed_texts(new_texts)
+
+        if new_embeddings.size > 0:
+            kb["faiss_index"].add(new_embeddings)
+
+        if use_bm25 and new_texts:
+            if "bm25_corpus" not in kb:
+                kb["bm25_corpus"] = []
+            new_tokens = [_tokenize_bm25(t) for t in new_texts]
+            kb["bm25_corpus"].extend(new_tokens)
+            kb["bm25_index"] = build_bm25_index(kb["bm25_corpus"])
+
+        #Мержим граф знаний
+        if "knowledge_graph" in kb:
+            new_graph = build_knowledge_graph(new_chunks)
+            kb["knowledge_graph"].update(new_graph)
+
+        #обновляем кластеры
+        cluster_indexes = kb.get("cluster_indexes", {})
+        cluster_new_tokens = {}
+        for chunk, emb in zip(new_chunks, new_embeddings):
+            for cluster_name in chunk.get("clusters", ["general"]):
+                cl = cluster_indexes.setdefault(cluster_name, {
+                    "chunks": [],
+                    "faiss_index": None,
+                    "dim": kb.get("dim", 0),
+                    "bm25_corpus": [],
+                    "bm25_index": None,
+                })
+                cl["chunks"].append(chunk)
+
+                # FAISS кластера
+                if cl["faiss_index"] is None:
+                    cl["faiss_index"], _ = build_faiss_index(np.array([emb]))
+                else:
+                    cl["faiss_index"].add(np.array([emb]))
+
+                # Собираем токены BM25 пачкой, чтобы не пересобирать индекс в цикле
+                if use_bm25:
+                    cluster_new_tokens.setdefault(cluster_name, []).append(_tokenize_bm25(chunk["text"]))
+
+        if use_bm25 and cluster_new_tokens:
+            for cname, new_toks in cluster_new_tokens.items():
+                cluster_indexes[cname]["bm25_corpus"].extend(new_toks)
+                cluster_indexes[cname]["bm25_index"] = build_bm25_index(cluster_indexes[cname]["bm25_corpus"])
+
+        kb["chunks"].extend(new_chunks)
+        kb["cluster_indexes"] = cluster_indexes
+        if "docs" in kb:
+            kb["docs"].extend(new_docs)
+
+        save_kb_to_disk(docs_path, kb, use_bm25=use_bm25)
+        KB_CACHE[docs_path] = kb
+        return kb

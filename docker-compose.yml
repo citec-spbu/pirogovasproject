@@ -1,5 +1,26 @@
 version: '3.8'
 
+x-hf-env: &hf-env
+  HF_HOME: /opt/huggingface
+  HF_HUB_CACHE: /opt/huggingface/hub
+  TRANSFORMERS_CACHE: /opt/huggingface/hub
+  SENTENCE_TRANSFORMERS_HOME: /opt/huggingface/sentence-transformers
+
+  EMBEDDING_MODEL_NAME: /opt/models/embedding
+  CROSS_ENCODER_MODEL_NAME: /opt/models/cross_encoder
+
+  USE_CROSS_ENCODER: ${USE_CROSS_ENCODER:-true}
+  HF_HUB_OFFLINE: "1"
+  TRANSFORMERS_OFFLINE: "1"
+  HF_DATASETS_OFFLINE: "1"
+  
+x-backend-build: &backend-build
+  context: ./backend
+  args:
+    HF_TOKEN: ${HF_TOKEN:-}
+    EMBEDDING_MODEL_REPO: ${EMBEDDING_MODEL_REPO:-DmitryPogrebnoy/MedRuBertTiny2}
+    CROSS_ENCODER_MODEL_REPO: ${CROSS_ENCODER_MODEL_REPO:-cross-encoder/mmarco-mMiniLMv2-L12-H384-v1}
+  
 services:
   database:
     image: postgres:15-alpine
@@ -44,8 +65,9 @@ services:
       - backend
   
   backend:
-    build: ./backend
-    container_name:  ct_photos_backend
+    image: pirogovasproject-backend:local
+    build: *backend-build
+    container_name: ct_photos_backend
     depends_on:
       database:
         condition: service_healthy
@@ -56,6 +78,7 @@ services:
     env_file:
       - .env
     environment:
+      <<: *hf-env
       POSTGRES_DB: ${POSTGRES_DB:-ct_photos_database}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@database:5432/${POSTGRES_DB:-ct_photos_database}
     ports:
@@ -63,11 +86,14 @@ services:
     volumes:
       - ./backend:/app
       - ./clinical_protocols:/app/clinical_protocols
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     networks:
       - backend
   
   celery_worker:
-    build: ./backend
+    build: *backend-build
     container_name: ct_photos_celery_worker
     command: celery -A app.core.celery_app worker --loglevel=info --concurrency=1
     depends_on:
@@ -80,11 +106,15 @@ services:
     env_file:
       - .env
     environment:
+      <<: *hf-env
       POSTGRES_DB: ${POSTGRES_DB:-ct_photos_database}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@database:5432/${POSTGRES_DB:-ct_photos_database}
     volumes:
       - ./backend:/app
       - ./clinical_protocols:/app/clinical_protocols
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     networks:
       - backend
 
@@ -95,4 +125,5 @@ volumes:
 networks:
   backend:
     driver: bridge
-  
+    
+

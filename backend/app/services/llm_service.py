@@ -193,8 +193,7 @@ async def process_llm_request(
     }
     return llm_response, trace_data
 
-@track_node_time
-async def get_structured_answer(llm_response) -> Dict[str, str]:
+def get_structured_answer(llm_response) -> Dict[str, str]:
     raw_report = llm_response.get("report", "")
     if not raw_report:
         return {"diagnosis": "", "clinical_recommendations": ""}
@@ -235,7 +234,7 @@ async def get_structured_answer(llm_response) -> Dict[str, str]:
     diagnosis = re.sub(r'\s+', ' ', diagnosis).strip()
     recommendations = re.sub(r'\n\s*\n', '\n', recommendations).strip()
 
-    return {**state,
+    return {
         "diagnosis": diagnosis, 
         "clinical_recommendations": recommendations
         }

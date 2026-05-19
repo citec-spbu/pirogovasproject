@@ -6,31 +6,31 @@
     align-items: center;
     padding: 24px;
     box-sizing: border-box;
-  }
+}
   
-  .card {
+.card {
     width: 100%;
     max-width: 360px;
     display: flex;
     flex-direction: column;
     align-items: center;
-  }
+}
   
-  .logo {
+.logo {
     margin-bottom: 48px;
     font-size: 64px;
     color: #18becd;
     line-height: 1;
-  }
+}
   
-  .form {
+.form {
     width: 100%;
     display: flex;
     flex-direction: column;
     gap: 18px;
-  }
+}
   
-  .submitButton {
+.submitButton {
     margin-top: 4px;
     border-radius: 16px;
     background: #00bfc9;
@@ -40,40 +40,6 @@
     padding: 20px 80px;
     position: relative;
     z-index: 2;
-  }
+}
   
-  .forgotButton {
-    border: none;
-    background: transparent;
-    padding: 0;
-    color: #1f1f1f;
-    font-family: 'OpenSans', sans-serif;
-    font-size: 16px;
-    font-weight: 400;
-    cursor: pointer;
-    align-self: center;
-    transition: opacity 0.2s ease;
-  }
-  .forgotButton:hover {
-    opacity: 0.85;
-    color: #00bfc9;
-  }
   
-  .hint {
-    margin-top: 40px;
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    max-width: 320px;
-    color: #9a9a9a;
-    font-family: 'OpenSans', sans-serif;
-    font-size: 13px;
-    line-height: 1.45;
-  }
-  
-  .infoIcon {
-    color: #18becd;
-    font-size: 16px;
-    line-height: 1;
-    margin-top: 2px;
-  }

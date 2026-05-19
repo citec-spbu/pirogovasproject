@@ -2,11 +2,9 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../../shared/ui/Button/Button';
 import { Input } from '../../shared/ui/Input/Input';
-import { RestorePasswordModal } from '../../features/restore-password/RestorePasswordModal';
 import { loginUser } from '../../shared/api/authApi';
 import { getUserRoleFromToken } from '../../shared/lib/jwt';
 import HomeIcon from '../../shared/assets/icons/homeIcon.svg';
-import InfoIcon from '../../shared/assets/icons/infoIcon.svg';
 import cls from './LoginPage.module.scss';
 
 export const LoginPage = () => {
@@ -88,29 +86,9 @@ export const LoginPage = () => {
             Авторизоваться
           </Button>
 
-          <button
-            type="button"
-            className={cls.forgotButton}
-            onClick={() => setIsRestoreOpen(true)}
-          >
-            Забыли пароль?
-          </button>
-        </div>
-
-        <div className={cls.hint}>
-          <span className={cls.infoIcon}>
-            <img className={cls.InfoIcon} src={InfoIcon} alt="Info" />
-          </span>
-          <span>
-            Если вы впервые, нажмите “Забыли пароль?”, чтобы установить пароль
-          </span>
         </div>
       </div>
 
-      <RestorePasswordModal
-        isOpen={isRestoreOpen}
-        onClose={() => setIsRestoreOpen(false)}
-      />
     </div>
   );
 };

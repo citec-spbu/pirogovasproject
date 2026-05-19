@@ -1,5 +1,5 @@
 .sidebar {
-    width: 400px;
+    width: clamp(266px, 20.8vw, 532px);
     min-height: 100%;
     background: rgba(0,0,0,0.7);
     flex-shrink: 0;
@@ -12,7 +12,7 @@
 }
   
 .link {
-    height: 100px;
+    height: clamp(67px, 5.2vw, 133px);
   
     display: flex;
     align-items: center;
@@ -22,7 +22,7 @@
   
     font-family: 'OpenSans', sans-serif;
     font-weight: 300;
-    font-size: 28px;
+    font-size: clamp(19px, 1.45vw, 37px);
     line-height: 38px;
   
     color: #ffffff;

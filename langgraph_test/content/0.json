@@ -1,0 +1,56 @@
+{
+    "Descending Aorta": {
+        "max_diam_1": 29.154759474226502,
+        "max_diam_2": 28.653097563788805,
+        "min_diam": 25.495097567963924,
+        "perimetr": 91.84062043356599,
+        "area": 580,
+        "ct_img": "0_ct_Descending Aorta.png",
+        "mask_img": "0_mask_Descending Aorta.png"
+    },
+    "Isthmus": {
+        "max_diam_1": 33.61547262794322,
+        "max_diam_2": 32.64965543462902,
+        "min_diam": 26.879360111431225,
+        "perimetr": 107.49747468305834,
+        "area": 705,
+        "ct_img": "0_ct_Isthmus.png",
+        "mask_img": "0_mask_Isthmus.png"
+    },
+    "Arch after LSA": {
+        "max_diam_1": 29.732137494637012,
+        "max_diam_2": 29.410882339705484,
+        "min_diam": 22.7705950734714,
+        "perimetr": 89.11269837220811,
+        "area": 533,
+        "ct_img": "0_ct_Arch after LSA.png",
+        "mask_img": "0_mask_Arch after LSA.png"
+    },
+    "Arch after TBC": {
+        "max_diam_1": 29.732137494637012,
+        "max_diam_2": 29.410882339705484,
+        "min_diam": 25.179356624028344,
+        "perimetr": 95.01219330881977,
+        "area": 577,
+        "ct_img": "0_ct_Arch after TBC.png",
+        "mask_img": "0_mask_Arch after TBC.png"
+    },
+    "Ascending Aorta befor TBC": {
+        "max_diam_1": 39.44616584663204,
+        "max_diam_2": 38.6846222677694,
+        "min_diam": 35.014282800023196,
+        "perimetr": 126.81118318204311,
+        "area": 1040,
+        "ct_img": "0_ct_Ascending Aorta befor TBC.png",
+        "mask_img": "0_mask_Ascending Aorta befor TBC.png"
+    },
+    "Ascending Aorta": {
+        "max_diam_1": 39.293765408777,
+        "max_diam_2": 38.63935817272331,
+        "min_diam": 35.6931365951495,
+        "perimetr": 128.91168824543146,
+        "area": 1098,
+        "ct_img": "0_ct_Ascending Aorta.png",
+        "mask_img": "0_mask_Ascending Aorta.png"
+    }
+}

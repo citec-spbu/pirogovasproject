@@ -1,0 +1,47 @@
+.sidebar {
+    width: clamp(266px, 20.8vw, 532px);
+    min-height: 100%;
+    background: rgba(0,0,0,0.7);
+    flex-shrink: 0;
+}
+  
+.nav {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+}
+  
+.link {
+    height: clamp(67px, 5.2vw, 133px);
+  
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  
+    border-bottom: 1px solid rgba(255, 255, 255, 0.28);
+  
+    font-family: 'OpenSans', sans-serif;
+    font-weight: 300;
+    font-size: clamp(19px, 1.45vw, 37px);
+    line-height: 38px;
+  
+    color: #ffffff;
+    text-decoration: none;
+  
+    transition:
+      background-color 0.2s ease,
+      color 0.2s ease;
+}
+  
+.link:hover {
+    background: #555555;
+}
+  
+.active {
+    background: #00bfc9;;
+    color: #ffffff;
+}
+  
+.active:hover {
+    background: #00bfc9;;
+}

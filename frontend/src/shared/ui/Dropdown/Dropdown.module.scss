@@ -1,0 +1,26 @@
+.dropdown {
+    position: relative;
+    display: inline-block;
+}
+  
+.trigger {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    font: inherit;
+}
+  
+.menu {
+    position: absolute;
+    top: calc(100% + 16px);
+    z-index: 100;
+}
+  
+.right {
+    right: 0;
+}
+  
+.left {
+    left: 0;
+}

@@ -1,0 +1,121 @@
+.trigger {
+    color: #fff;
+}
+  
+.triggerContent {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-family: 'DaysOne';
+    font-weight: 400;
+    font-size: 24px;
+    line-height: 25px;
+}
+  
+.arrow {
+    width: 0;
+    height: 0;
+    border-left: 10px solid transparent;
+    border-right: 10px solid transparent;
+    border-top: 10px solid #fff;
+}
+  
+.menu {
+    width: 351px;
+    background: #ffffff;
+    color: #000000;
+    padding: 30px 17px;
+    box-sizing: border-box;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.50);
+}
+  
+.userInfo {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+  
+.avatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+  
+.avatarIcon {
+    width: 40px;
+    height: 40px;
+}
+  
+.fullName {
+    margin: 0;
+    font-family: 'OpenSans', sans-serif;
+    font-weight: 500;
+    font-size: 18px;
+    line-height: 24px;
+    color: #000000;
+}
+  
+.role {
+    margin: 4px 0 0;
+    font-family: 'OpenSans', sans-serif;
+    font-weight: 400;
+    font-size: 12px;
+    line-height: 16px;
+    color: #000000;
+}
+  
+.divider {
+    height: 1px;
+    background:  #bdbdbd;;
+    margin: 16.5px 0;
+}
+
+.containerButton {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 7px;
+    padding-left: 10px;
+   
+}
+
+.lockIcon{
+    width: 21px;
+    height: 24px ;
+    flex-shrink: 0;
+}
+  
+.menuItem {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    text-align: left;
+
+    font-family: 'OpenSans', sans-serif;
+    font-size: 16px;
+    line-height: 21px;
+    font-weight: 500;
+    color: #000000;
+}
+  
+.logoutButton {
+    display: block;
+    background: none;
+    border: none;
+    padding: 0 0 0 42px;
+
+    font-family: 'OpenSans', sans-serif;
+    font-size: 16px;
+    line-height: 21px;
+    font-weight: 500;
+    color: #e30000;
+
+    cursor: pointer;
+    text-align: left;
+   
+}

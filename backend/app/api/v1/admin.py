@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List
 
 from app.core.database import get_db
-from app.schemas.admin import AdminCreateUser, AdminUserOut, AdminUpdateUser
+from app.schemas.admin import AdminCreateUser, AdminUserOut, AdminUpdateUser, AdminMetricsOut
 from app.schemas.report_template import ReportTemplateCreate, ReportTemplateOut
 from app.schemas.clinical_protocol import ClinicalProtocolOut
 from app.services import admin_service
@@ -22,7 +22,7 @@ async def create_user(
     try:
         user = await admin_service.create_user(db, user_data)
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     return user
 
 @router.patch("/update_user/{user_id}", response_model=AdminUserOut, status_code=status.HTTP_200_OK)
@@ -35,7 +35,7 @@ async def update_user(
     try:
         user = await admin_service.update_user(db, user_id, user_data)
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     return user
 
 @router.post("/report-templates/upload", response_model=ReportTemplateOut, status_code=status.HTTP_201_CREATED)
@@ -65,7 +65,7 @@ async def upload_report_template(
             user_id=admin.id,
         )
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
 
 # @router.post("/clinical-protocols/replace", response_model=List[ClinicalProtocolOut])
 # async def replace_clinical_protocols(
@@ -90,4 +90,25 @@ async def add_clinical_protocols(
     try:
         return await admin_service.add_clinical_protocols(db=db, file=file, uploaded_by_user_id=admin.id, docs_path="clinical_protocols")
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    
+@router.get("/users", response_model=List[AdminUserOut])
+async def get_all_users(
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    return await admin_service.get_all_users(db)
+
+@router.get("/report-templates", response_model=List[ReportTemplateOut])
+async def get_all_report_templates(
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    return await admin_service.get_all_report_templates(db)
+
+@router.get("/metrics", response_model=AdminMetricsOut)
+async def get_metrics(
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    return await admin_service.get_admin_metrics(db)

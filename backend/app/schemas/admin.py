@@ -10,7 +10,7 @@ class AdminCreateUser(BaseModel):
     organization_name: str
     name: str
     surname: str
-    patronymic: str
+    patronymic: Optional[str] = None
     date_of_birth: date
 
 class AdminUpdateUser(BaseModel):
@@ -30,8 +30,15 @@ class AdminUserOut(BaseModel):
     organization_name: str
     name: str
     surname: str
-    patronymic: str
+    patronymic: Optional[str] = None
     date_of_birth: date
     is_active: bool
 
     model_config = ConfigDict(from_attributes=True)
+
+class AdminMetricsOut(BaseModel):
+    llm_calls_total: int
+    llm_calls_failed: int
+    llm_error_percent: float
+    reviewed_reports_total: int
+    average_review_score: Optional[float] = None

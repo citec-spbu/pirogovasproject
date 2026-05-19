@@ -1,12 +1,12 @@
 import os
 from typing import List, Optional
-
+from app.core.config import get_settings
 import numpy as np
 
-
+settings=get_settings()
 os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
 
-EMBEDDING_MODEL_NAME = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+EMBEDDING_MODEL_NAME = settings.EMBEDDING_MODEL_NAME
 _EMBEDDER = None
 
 
@@ -42,10 +42,7 @@ def embed_texts(texts: List[str], is_query: bool = False) -> np.ndarray:
         normalize_embeddings=True,
         batch_size=8,
         convert_to_numpy=True,
-        show_progress_bar=True,
+        show_progress_bar=False,
     )
 
-    norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
-    norms[norms == 0] = 1.0
-    embeddings = embeddings / norms
     return embeddings.astype("float32")

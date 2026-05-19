@@ -9,6 +9,7 @@ from app.core.database import AsyncSessionLocal
 from app.core.enum.call_type import CallType, CallStatus
 from app.models.report import Report
 from app.models.llm_calls import LLMCall
+from app.models.report_templates import ReportTemplate
 from app.services.llm_judge import LLMJudge
 
 logger = logging.getLogger(__name__)

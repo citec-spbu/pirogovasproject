@@ -21,3 +21,4 @@ minio
 celery
 redis
 jinja2
+langchain-community

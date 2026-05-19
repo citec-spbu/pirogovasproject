@@ -1,0 +1,45 @@
+.page {
+    min-height: 100vh;
+    background: #EDEDED;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 24px;
+    box-sizing: border-box;
+}
+  
+.card {
+    width: 100%;
+    max-width: 360px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+  
+.logo {
+    margin-bottom: 48px;
+    font-size: 64px;
+    color: #18becd;
+    line-height: 1;
+}
+  
+.form {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+  
+.submitButton {
+    margin-top: 4px;
+    border-radius: 16px;
+    background: #00bfc9;
+    font-family: 'OpenSans', sans-serif;
+    font-size: 20px;
+    color: #FFFFFF;
+    padding: 20px 80px;
+    position: relative;
+    z-index: 2;
+}
+  
+  

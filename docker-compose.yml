@@ -88,6 +88,22 @@ services:
     networks:
       - backend
 
+  frontend:
+    build: ./frontend
+    container_name: ct_photos_frontend
+    depends_on:
+      - backend
+    environment:
+      VITE_API_URL: http://localhost:8000/api/v1
+      VITE_AUTH_BYPASS: "false"
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - backend
+
 volumes:
   postgres_data:
   minio_data:

@@ -1,0 +1,75 @@
+.page {
+    width: 100%;
+    margin: 0 auto;
+}
+  
+.uploadSection {
+    margin-top: 20px;
+}
+  
+.title,
+.subtitle {
+    margin: 0 0 18px;
+  
+    font-family: 'OpenSans', sans-serif;
+    font-size: 18px;
+    line-height: 24px;
+    font-weight: 500;
+    color: #000000;
+}
+  
+.uploadButton {
+    margin-top: 14px;
+    padding: 16px 37px;
+  
+    border-radius: 11px;
+    background: #00bfc9;;
+  
+    font-family: 'OpenSans', sans-serif;
+    font-size: 16px;
+    font-weight: 600;
+    color: #ffffff;
+}
+  
+.uploadButton:hover {
+    background: #008894;
+}
+  
+.historySection {
+    margin-top: 30px;
+}
+  
+.table {
+    width: 100%;
+    border-collapse: collapse;
+  
+    font-family: 'OpenSans', sans-serif;
+    font-size: 14px;
+}
+  
+.table thead {
+    background: #f2f2f2;
+}
+  
+.table th,
+.table td {
+    padding: 10px 16px;
+    border-bottom: 1px solid #dddddd;
+    text-align: left;
+}
+  
+.table th {
+    font-weight: 600;
+}
+  
+.iconButton {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+}
+  
+.downloadIcon{
+    width: 18px;
+    height: 18px;
+}

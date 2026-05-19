@@ -75,6 +75,15 @@ async def create_report(
                 }
             )
 
+        archive_count = sum(1 for item in ct_files_to_upload if item["kind"] == "archive")
+        image_count = sum(1 for item in ct_files_to_upload if item["kind"] == "image")
+
+        if archive_count > 1:
+            raise ValueError("Only one ZIP archive is allowed")
+
+        if archive_count == 1 and image_count > 0:
+            raise ValueError("Upload either one ZIP archive or multiple CT images, not both")
+
         uploaded_object_keys = []
         uploaded_ct_files = []
 

@@ -2,10 +2,13 @@ from pathlib import Path
 from typing import Any, Dict, List, TypedDict
 import json
 import logging
+import uuid
+from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.memory import InMemorySaver
 
-from backend.app.core.rag.kb_manager import ingest_request, initialize_kb
-from backend.app.services.llm_service import build_prompt, call_local_llm, fuse_context
-from backend.app.core.rag.retriever import retrieve_graph_context
+from app.core.rag.kb_manager import ingest_request, initialize_kb
+from app.services.llm_service import build_prompt, call_local_llm, fuse_context, get_structured_answer
+from app.core.rag.retriever import retrieve_graph_context
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +25,8 @@ class MedGraphState(TypedDict, total=False):
     final_prompt: str
     raw_llm_output: str
     chunks_count: int
+    diagnosis: str
+    clinical_recommendations: str 
     
 def configure_logging(level: int = logging.INFO) -> None:
     """
@@ -35,26 +40,39 @@ def configure_logging(level: int = logging.INFO) -> None:
         format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     )
 
+def validate_and_set_defaults(state: MedGraphState) -> MedGraphState:
+    defaults = {
+        "query": "Жалоб на здоровье нет",
+        "patient_history": "Анамнез не предоставлен",
+        "patient_data": {},
+        "guideline_paths": [],
+        "warnings": [],
+        "errors": []
+    }
+    # Обновляем только отсутствующие или пустые поля
+    updates = {k: v for k, v in defaults.items() if not state.get(k)}
+    return updates
+
 def build_graph():
-    from langgraph.checkpoint.memory import InMemorySaver
-    from langgraph.graph import END, START, StateGraph
-
     builder = StateGraph(MedGraphState)
-
+    builder.add_node("validate_input", validate_and_set_defaults)
     builder.add_node("ingest_request", ingest_request)
     builder.add_node("initialize_kb", initialize_kb)
     builder.add_node("retrieve_graph_context", retrieve_graph_context)
     builder.add_node("fuse_context", fuse_context)
     builder.add_node("build_prompt", build_prompt)
     builder.add_node("call_local_llm", call_local_llm)
+    builder.add_node("get_structured_answer", get_structured_answer)
 
-    builder.add_edge(START, "ingest_request")
+    builder.add_edge(START, "validate_input")
+    builder.add_edge("validate_input", "ingest_request")             
     builder.add_edge("ingest_request", "initialize_kb")
     builder.add_edge("initialize_kb", "retrieve_graph_context")
     builder.add_edge("retrieve_graph_context", "fuse_context")
     builder.add_edge("fuse_context", "build_prompt")
     builder.add_edge("build_prompt", "call_local_llm")
-    builder.add_edge("call_local_llm", END)
+    builder.add_edge("call_local_llm", "get_structured_answer")
+    builder.add_edge("get_structured_answer", END)
 
     return builder.compile(checkpointer=InMemorySaver())
 
@@ -93,48 +111,25 @@ def export_langsmith_runs(
             exported_count += 1
 
     logger.info("LangSmith runs were exported successfully: count=%s", exported_count)
+    
+graph = build_graph()
 
-
-def run_demo() -> Dict[str, Any]:
-    graph = build_graph()
-
+def generate_medical_report(query: str, patient_history: str, patient_data: dict, guideline_paths: list[str]) -> Dict[str, Any]:
+    thread_id = f"api-{uuid.uuid4()}"
     initial_state: MedGraphState = {
-        "query": "боль в груди, между лопатками, в верхней части спины, шее, затруднённое дыхание, одышка, хрипы, кашель,ощущение комка в горле. Врожденных патологий нет",
-        "patient_history": "Мужчина, 54 лет, длительный стаж курения",
-        "guideline_paths": ["docs"],
+        "query": query,
+        "patient_history": patient_history,
+        "guideline_paths": guideline_paths,
+        "patient_data": patient_data,
         "warnings": [],
         "errors": [],
-        "patient_data": load_patient_data(),
     }
 
-    config = {
-        "configurable": {
-            "thread_id": "local-vllm-demo-001",
-        }
-    }
-
+    config = {"configurable": {"thread_id": thread_id}}
     result = graph.invoke(initial_state, config=config)
 
-    warnings = result.get("warnings", [])
-    errors = result.get("errors", [])
-    retrieved_guidelines = result.get("retrieved_guidelines", [])
-
-    if warnings:
-        logger.warning("Warnings: %s", warnings)
-    else:
-        logger.info("Warnings: none")
-
-    if errors:
-        logger.error("Errors: %s", errors)
-    else:
-        logger.info("Errors: none")
-
-    logger.info("Chunks count: %s", result.get("chunks_count", 0))
-    logger.info("Retrieved guidelines count: %s", len(retrieved_guidelines))
-
-    for index, item in enumerate(retrieved_guidelines, start=1):
-        logger.info("Retrieved guideline %s: %s", index, item)
-
-    logger.debug("Fused context: %s", result.get("fused_context", ""))
-    logger.info("Raw LLM output: %s", result.get("raw_llm_output", ""))
-
+    return {
+        "report": result.get("raw_llm_output"),
+        "warnings": result.get("warnings", []),
+        "errors": result.get("errors", []),
+    }

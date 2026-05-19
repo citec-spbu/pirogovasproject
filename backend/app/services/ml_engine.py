@@ -115,17 +115,17 @@ def export_langsmith_runs(
 graph = build_graph()
 
 def generate_medical_report(query: str, patient_history: str, patient_data: dict, guideline_paths: list[str]) -> Dict[str, Any]:
+    thread_id = f"api-{uuid.uuid4()}"
     initial_state: MedGraphState = {
         "query": query,
         "patient_history": patient_history,
         "guideline_paths": guideline_paths,
         "patient_data": patient_data,
-        "thread_id": f"api-{uuid.uuid4()}",
         "warnings": [],
         "errors": [],
     }
 
-    config = {"configurable": {"thread_id": "api-request"}}
+    config = {"configurable": {"thread_id": thread_id}}
     result = graph.invoke(initial_state, config=config)
 
     return {

@@ -2,6 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import uuid
 from typing import List, Optional
+from datetime import datetime, timezone
 
 from app.models.report import Report
 from app.models.user import User
@@ -120,8 +121,12 @@ async def render_and_store_report_files(
 async def add_review(db: AsyncSession, review: ReportReviewUpdate, id_report: str):
     result = await db.execute(select(Report).where(Report.id_report == id_report))
     report = result.scalar_one_or_none()
+
     if not report:
         raise ValueError("Report not found")
+
     report.review_score = review.review_score
     report.review_text = review.review_text
+    report.reviewed_at = datetime.now(timezone.utc)
+
     await db.commit()

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from datetime import datetime
 from typing import List, Optional
 from app.core.enum.report_status import ReportStatus
@@ -58,7 +58,7 @@ class ReportOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class ReportReviewUpdate(BaseModel):
-    review_score: int
+    review_score: int = Field(..., ge=1, le=5)
     review_text: Optional[str] = None
 
 
